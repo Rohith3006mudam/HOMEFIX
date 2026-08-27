@@ -12,6 +12,10 @@ import { cancelMyBooking, createBooking, listMyBookings, subscribeToMyBookings }
 import { createPayment } from "./paymentService";
 import AuthModal from "./components/AuthModal";
 import RoleRoute from "./components/common/RoleRoute";
+import LiveTrackingMap from "./components/maps/LiveTrackingMap";
+import { listServices } from "./services/catalog";
+import { subscribeToBookingLocation, writeMyLocation } from "./services/employeeLocation";
+import { useLiveLocation } from "./hooks/useLiveLocation";
 
 // ---------------------------------------------------------------------
 // Static content: service catalogue + demo professionals for the
@@ -128,8 +132,18 @@ function AuthenticatedApp() {
   const [toast, setToast] = useState("");
   const [supportOpen, setSupportOpen] = useState(false);
 
-  const [services] = useState(SERVICES);
+  const [services, setServices] = useState(SERVICES);
   const [employees] = useState(EMPLOYEES);
+
+  // Prefer the live Supabase catalogue; silently keep the built-in list if
+  // the services table isn't populated/migrated yet (see listServices()).
+  useEffect(() => {
+    let cancelled = false;
+    listServices().then((rows) => {
+      if (!cancelled && rows) setServices(rows);
+    });
+    return () => { cancelled = true; };
+  }, []);
   const [bookings, setBookings] = useState([]);
   const [bookingsLoading, setBookingsLoading] = useState(false);
   const [bookingsError, setBookingsError] = useState("");
@@ -777,12 +791,32 @@ function OrderDetails({ booking, onBack, onTrack, onDownload }) {
 }
 
 function Tracking({ booking, employees, onBack, notify, onLiveUpdate }) {
+  const [employeeLocation, setEmployeeLocation] = useState(null);
+  const [customerLocation, setCustomerLocation] = useState(null);
+
   useEffect(() => {
     if (!booking?.customerId) return undefined;
     return subscribeToMyBookings(booking.customerId, (payload) => {
       if (payload.new && payload.new.id === booking.id) onLiveUpdate(mapRemoteBooking(payload.new));
     });
   }, [booking?.id, booking?.customerId]);
+
+  // Real Supabase Realtime feed of the assigned professional's position.
+  useEffect(() => {
+    if (!booking?.id) return undefined;
+    return subscribeToBookingLocation(booking.id, (row) => {
+      setEmployeeLocation({ latitude: row.latitude, longitude: row.longitude });
+    });
+  }, [booking?.id]);
+
+  // One-time customer position for the map (never watched/streamed).
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (position) => setCustomerLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
+      () => {}
+    );
+  }, []);
 
   if (!booking) return <Empty text="No booking to track yet." />;
   const current = STATUSES.indexOf(normalizeStatus(booking.status));
@@ -796,7 +830,13 @@ function Tracking({ booking, employees, onBack, notify, onLiveUpdate }) {
       </div>
       <div className="tracking-grid">
         <section className="panel">
-          <div className="map-placeholder"><MapPin size={28} /><b>Map unavailable</b><small>Live map is optional in demo mode</small></div>
+          <LiveTrackingMap
+            customerLocation={customerLocation}
+            employeeLocation={employeeLocation}
+            employeeName={professional?.name}
+            status={STATUS_LABELS[normalizeStatus(booking.status)]}
+            updatedAt={employeeLocation ? Date.now() : null}
+          />
           <h3>Progress timeline</h3>
           <div className="timeline">
             {STATUSES.filter((s) => s !== "CANCELLED").map((label, index) => (
@@ -903,6 +943,28 @@ function ProfessionalDashboard({ bookings, setBookings, employee, notify }) {
     SERVICE_STARTED: ["Complete service", "COMPLETED"],
   };
   const jobs = bookings.filter((item) => !["COMPLETED", "CANCELLED"].includes(normalizeStatus(item.status)));
+  const activeJob = jobs.find((item) => ["ASSIGNED", "ON_THE_WAY", "SERVICE_STARTED"].includes(normalizeStatus(item.status)));
+  const location = useLiveLocation({ throttleMs: 8000 });
+
+  // Only ever writes to Supabase while the professional has explicitly
+  // opted in (location.isTracking) AND a job is actively in progress.
+  useEffect(() => {
+    if (!location.location || !activeJob) return;
+    writeMyLocation({
+      bookingId: activeJob.id,
+      latitude: location.location.latitude,
+      longitude: location.location.longitude,
+      accuracy: location.location.accuracy,
+      heading: location.location.heading,
+      speed: location.location.speed,
+    }).catch((error) => console.warn("[HOMEFIX] Location share failed:", error.message));
+  }, [location.location, activeJob?.id]);
+
+  // Stop sharing automatically once there is no active job left to track.
+  useEffect(() => {
+    if (!activeJob && location.isTracking) location.stopTracking();
+  }, [activeJob, location.isTracking]);
+
   const advance = (booking, nextStatus) => {
     setBookings((all) => all.map((item) => (item.id === booking.id ? { ...item, status: nextStatus } : item)));
     notify(`${booking.id} updated to ${STATUS_LABELS[nextStatus]}.`);
@@ -912,6 +974,21 @@ function ProfessionalDashboard({ bookings, setBookings, employee, notify }) {
       <div className="dashboard-top">
         <div><span className="eyebrow">PROFESSIONAL DASHBOARD</span><h1>Good morning, {employee.name.split(" ")[0]}.</h1></div>
       </div>
+      {activeJob && (
+        <section className="panel location-share">
+          <div>
+            <b>Share live location</b>
+            <p>Lets the customer see your position on the map while job {activeJob.id} is active. You can turn this off anytime.</p>
+            {location.error && <small className="error-text">{location.error}</small>}
+          </div>
+          <button
+            className={location.isTracking ? "primary-btn small" : "secondary-btn small"}
+            onClick={() => (location.isTracking ? location.stopTracking() : location.startTracking())}
+          >
+            {location.isTracking ? "Sharing · Tap to stop" : "Enable location sharing"}
+          </button>
+        </section>
+      )}
       <div className="stat-grid four">
         <Stat label="Today's jobs" value={jobs.length} icon={<CalendarDays />} />
         <Stat label="Pending" value={jobs.length} icon={<Clock3 />} />
