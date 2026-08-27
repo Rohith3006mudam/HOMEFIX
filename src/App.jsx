@@ -1,118 +1,1029 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./extra.css";
+import {
+  ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, CreditCard,
+  Download, LocateFixed, LogOut, MapPin, Menu, MessageCircle, Package, Pencil, Phone,
+  Printer, Search, ShieldCheck, ShieldAlert, Star, User, Users, WalletCards, X, Zap,
+} from "lucide-react";
+import { isSupabaseConfigured } from "./lib/supabase";
+import { useAuth } from "./hooks/useAuth";
+import { updateOwnProfile } from "./services/auth";
+import { cancelMyBooking, createBooking, listMyBookings, subscribeToMyBookings } from "./services/bookings";
 import { createPayment } from "./paymentService";
-import { isSupabaseConfigured, listServices, signIn, signUp, signOut, supabase } from "./lib/homefixData";
-import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, CreditCard, Download, HelpCircle, LocateFixed, LogOut, MapPin, Menu, MessageCircle, Package, Pencil, Phone, Plus, Printer, Search, ShieldCheck, Star, Trash2, User, Users, WalletCards, X, Zap } from "lucide-react";
+import AuthModal from "./components/AuthModal";
 
-const img = { plumbing: "https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=900&q=80", electrical: "https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&w=900&q=80", cleaning: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=900&q=80", ac: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=900&q=80", appliance: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=900&q=80", carpentry: "https://images.unsplash.com/photo-1601058268499-e52658b8bb88?auto=format&fit=crop&w=900&q=80", painting: "https://images.unsplash.com/photo-1562259949-e8e7689d7828?auto=format&fit=crop&w=900&q=80", pest: "https://images.unsplash.com/photo-1563453392212-326f5e854473?auto=format&fit=crop&w=900&q=80", bike: "https://images.unsplash.com/photo-1558981806-ec527fa84c39?auto=format&fit=crop&w=900&q=80", car: "https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&w=900&q=80", cab: "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=900&q=80" };
-const servicesSeed = [["plumbing","Plumbing","Leaks, taps, pipes and bathroom repairs",199], ["electrical","Electrical","Switches, wiring, fans and safe repairs",249], ["cleaning","Home Cleaning","Deep cleaning for a fresher home",399], ["ac","AC Repair","Cooling service, gas refill and repair",349], ["appliance","Appliance Repair","Reliable repairs for everyday appliances",299], ["painting","Painting","Beautiful finishes for every room",599], ["carpentry","Carpentry","Furniture assembly and woodwork",299], ["pest","Pest Control","Targeted protection for your home",499], ["bathroom","Bathroom Cleaning","Hygienic bathroom deep cleaning",299], ["purifier","Water Purifier","Filter replacement and servicing",249], ["washing","Washing Machine Repair","Fast diagnosis and expert repair",299], ["refrigerator","Refrigerator Repair","Cooling and compressor service",349], ["bike","Bike Service","Pickup, servicing and roadside help",249], ["car","Car Service","Inspection and dependable car care",499], ["cab","Cab / Ride","Safe city rides on demand",99]].map(([id,name,description,price]) => ({ id,name,description,price,image:img[id] || img.appliance,active:true,subServices:["Standard service","Priority service"] }));
-const employeesSeed = ["Ravi Kumar","Meera Shah","Arjun Reddy","Anjali Menon","Suresh Patil","Nisha Verma","Vikram Singh","Pooja Nair"].map((name,index) => ({ id:`EMP-${1042+index*17}`, name, phone:`+91 98${String(7654321+index*193).slice(0,8)}`, email:`${name.toLowerCase().replace(" ",".")}@homefix.demo`, skills:index%2?"Cleaning, Painting":"Plumbing, Electrical", area:index%2?"South Zone":"Central Zone", rating:4.7+(index%3)/10, jobs:80+index*13, earnings:42000+index*2800, available:true, active:true, avatar:name.split(" ").map((x)=>x[0]).join("") }));
-const statuses = ["PENDING","CONFIRMED","ASSIGNED","ON_THE_WAY","ARRIVED","SERVICE_STARTED","COMPLETED","CANCELLED"];
-const statusLabels = { PENDING: "Booked", CONFIRMED: "Confirmed", ASSIGNED: "Professional Assigned", ON_THE_WAY: "On The Way", ARRIVED: "Arrived", SERVICE_STARTED: "Service Started", COMPLETED: "Completed", CANCELLED: "Cancelled" };
-const legacyStatus = { "Confirmed": "CONFIRMED", "Professional Assigned": "ASSIGNED", "On The Way": "ON_THE_WAY", "Arrived": "ARRIVED", "Work Started": "SERVICE_STARTED", "Completed": "COMPLETED", "Cancelled": "CANCELLED" };
-const normalizeStatus = (value) => legacyStatus[value] || value || "PENDING";
-const read = (key,fallback) => { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } };
-const save = (key,value) => localStorage.setItem(key,JSON.stringify(value));
-const money = (value) => `₹${Number(value||0).toLocaleString("en-IN")}`;
-const dateToday = () => new Date().toISOString().slice(0,10);
-const makeId = (prefix) => `${prefix}${Date.now().toString().slice(-8)}`;
-const customerIdFor = (account, phone) => account?.id || `CUS${phone.slice(-6)}`;
-const loadServices = () => {
-  const stored = read("homefix_services", []);
-  const merged = [...stored, ...servicesSeed.filter((seed) => !stored.some((item) => item.id === seed.id))];
-  return merged.map((item) => ({ ...item, image: item.image?.includes("163154580") ? img.ac : item.image, subServices: item.subServices || ["Standard service", "Priority service"] }));
+// ---------------------------------------------------------------------
+// Static content: service catalogue + demo professionals for the
+// Professional/Admin dashboards (out of scope for the Supabase booking
+// pipeline, kept as local UI state as before).
+// ---------------------------------------------------------------------
+
+const img = {
+  plumbing: "https://images.unsplash.com/photo-1607472586893-edb57bdc0e39?auto=format&fit=crop&w=900&q=80",
+  electrical: "https://images.unsplash.com/photo-1621905252507-b35492cc74b4?auto=format&fit=crop&w=900&q=80",
+  cleaning: "https://images.unsplash.com/photo-1581578731548-c64695cc6952?auto=format&fit=crop&w=900&q=80",
+  ac: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=900&q=80",
+  appliance: "https://images.unsplash.com/photo-1581092160562-40aa08e78837?auto=format&fit=crop&w=900&q=80",
+  carpentry: "https://images.unsplash.com/photo-1601058268499-e52658b8bb88?auto=format&fit=crop&w=900&q=80",
+  painting: "https://images.unsplash.com/photo-1562259949-e8e7689d7828?auto=format&fit=crop&w=900&q=80",
+  pest: "https://images.unsplash.com/photo-1563453392212-326f5e854473?auto=format&fit=crop&w=900&q=80",
+  bathroom: "https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=900&q=80",
+  purifier: "https://images.unsplash.com/photo-1500989145603-8e7ef71d639e?auto=format&fit=crop&w=900&q=80",
+  washing: "https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&w=900&q=80",
+  refrigerator: "https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=900&q=80",
 };
-const loadEmployees = () => {
-  const stored = read("homefix_employees", []);
-  return [...stored, ...employeesSeed.filter((seed) => !stored.some((item) => item.id === seed.id))];
+
+const SERVICES = [
+  ["plumbing", "Plumbing", "Leaks, taps, pipes and bathroom repairs", 199],
+  ["electrical", "Electrical", "Switches, wiring, fans and safe repairs", 249],
+  ["cleaning", "Home Cleaning", "Deep cleaning for a fresher home", 399],
+  ["ac", "AC Repair", "Cooling service, gas refill and repair", 349],
+  ["appliance", "Appliance Repair", "Reliable repairs for everyday appliances", 299],
+  ["painting", "Painting", "Beautiful finishes for every room", 599],
+  ["carpentry", "Carpentry", "Furniture assembly and woodwork", 299],
+  ["pest", "Pest Control", "Targeted protection for your home", 499],
+  ["bathroom", "Bathroom Cleaning", "Hygienic bathroom deep cleaning", 299],
+  ["purifier", "Water Purifier", "Filter replacement and servicing", 249],
+  ["washing", "Washing Machine Repair", "Fast diagnosis and expert repair", 299],
+  ["refrigerator", "Refrigerator Repair", "Cooling and compressor service", 349],
+].map(([id, name, description, price]) => ({ id, name, description, price, image: img[id], active: true }));
+
+const EMPLOYEES = ["Ravi Kumar", "Meera Shah", "Arjun Reddy", "Anjali Menon"].map((name, index) => ({
+  id: `EMP-${1042 + index * 17}`,
+  name,
+  phone: `+91 98${String(7654321 + index * 193).slice(0, 8)}`,
+  skills: index % 2 ? "Cleaning, Painting" : "Plumbing, Electrical",
+  rating: 4.7 + (index % 3) / 10,
+  jobs: 80 + index * 13,
+  earnings: 42000 + index * 2800,
+  available: true,
+  avatar: name.split(" ").map((part) => part[0]).join(""),
+}));
+
+const STATUSES = ["PENDING", "CONFIRMED", "ASSIGNED", "ON_THE_WAY", "SERVICE_STARTED", "COMPLETED", "CANCELLED"];
+const STATUS_LABELS = {
+  PENDING: "Pending", CONFIRMED: "Confirmed", ASSIGNED: "Professional Assigned",
+  ON_THE_WAY: "On The Way", SERVICE_STARTED: "Service Started", COMPLETED: "Completed", CANCELLED: "Cancelled",
 };
-const loadBookings = () => read("homefix_bookings", []).map((booking) => ({ ...booking, status: normalizeStatus(booking.status) }));
+const normalizeStatus = (value) => (STATUSES.includes(value) ? value : "PENDING");
+const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
+const dateToday = () => new Date().toISOString().slice(0, 10);
+const TIME_SLOTS = ["09:00 AM - 11:00 AM", "12:00 PM - 02:00 PM", "03:00 PM - 05:00 PM", "05:00 PM - 07:00 PM"];
+
 const pageFromPath = () => {
   const path = window.location.pathname;
-  if (path === "/" || path === "") return "home";
   if (path === "/services") return "services";
-  if (path.startsWith("/service/")) return "service";
-  if (path === "/booking") return "service";
-  if (path === "/booking-confirmation") return "confirmation";
+  if (path.startsWith("/service/") || path === "/booking") return "booking";
+  if (path === "/confirmation") return "confirmation";
   if (path === "/orders") return "orders";
   if (path.startsWith("/orders/")) return "order-details";
   if (path.startsWith("/track/")) return "tracking";
   if (path === "/profile") return "profile";
-  if (path.startsWith("/professional") || path.startsWith("/employee")) return "professional";
+  if (path.startsWith("/employee")) return "professional";
   if (path.startsWith("/admin")) return "admin";
-  if (path === "/support") return "support";
   return "home";
 };
 
+const routeFor = (page, activeId) => ({
+  home: "/", services: "/services", booking: "/booking", confirmation: "/confirmation",
+  orders: "/orders", "order-details": activeId ? `/orders/${activeId}` : "/orders",
+  tracking: activeId ? `/track/${activeId}` : "/orders", profile: "/profile",
+  professional: "/employee", admin: "/admin",
+}[page] || "/");
+
+// ---------------------------------------------------------------------
+// Top-level app: gates on Supabase configuration, then wires the single
+// useAuth() session/profile source of truth into every page.
+// ---------------------------------------------------------------------
+
 export default function App() {
-  const [page,setPage] = useState(pageFromPath); const [services,setServices] = useState(loadServices); const [employees,setEmployees] = useState(loadEmployees); const [bookings,setBookings] = useState(loadBookings); const [payments,setPayments] = useState(()=>read("homefix_payments",[])); const [user,setUser] = useState(()=>read("homefix_current_user",null)); const [active,setActive] = useState(null); const [selectedService,setSelectedService] = useState(null); const [query,setQuery] = useState(""); const [toast,setToast] = useState(""); const [loginOpen,setLoginOpen] = useState(false); const [mobileOpen,setMobileOpen] = useState(false); const [bookingStep,setBookingStep] = useState(0); const [supportOpen,setSupportOpen] = useState(false);
-  const [bookingForm,setBookingForm] = useState({ quantity:1, subService:"Standard service", date:dateToday(), time:"10:00 AM - 12:00 PM", name:"", phone:"", email:"", address:"", landmark:"", city:"", pincode:"", problem:"", image:"", coupon:"", payment:"Cash on Service", paymentState:"Pending" });
-  const [databaseError,setDatabaseError] = useState("");
-  useEffect(()=>{ if(!isSupabaseConfigured) setToast("HOMEFIX database is not configured. Demo storage remains active."); },[]);
-  useEffect(()=>{ if(!isSupabaseConfigured) return; listServices().then((remoteServices)=>{ if(remoteServices?.length) setServices(remoteServices.map((item)=>({...item,price:item.starting_price,image:item.image_url,active:item.active,subServices:["Standard service","Priority service"]}))); }).catch((error)=>setDatabaseError(error.message||"Unable to load HOMEFIX services.")); },[]);
-  useEffect(()=>{
-    if(!isSupabaseConfigured){
-      setDatabaseError("HOMEFIX database is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY to .env.local.");
-      return undefined;
-    }
-    const { data } = supabase.auth.onAuthStateChange((_event,session)=>{
-      if(!session?.user) return;
-      setUser((current)=>current||{ id:session.user.id, name:session.user.user_metadata?.full_name||session.user.email, phone:session.user.user_metadata?.phone||"", email:session.user.email, role:session.user.user_metadata?.role||"customer" });
-    });
-    return ()=>data.subscription.unsubscribe();
-  },[]);
-  useEffect(()=>{ if((page==="service"||page==="confirmation"||page==="order-details"||page==="tracking")&&!selectedService){ const serviceId=window.location.pathname.split("/").pop(); setSelectedService(services.find((item)=>item.id===serviceId)||services[0]||null); } },[page,selectedService,services]); useEffect(()=>save("homefix_services",services),[services]); useEffect(()=>save("homefix_employees",employees),[employees]); useEffect(()=>save("homefix_bookings",bookings),[bookings]); useEffect(()=>save("homefix_payments",payments),[payments]); useEffect(()=>{ const onPopState=()=>setPage(pageFromPath()); window.addEventListener("popstate",onPopState); return()=>window.removeEventListener("popstate",onPopState); },[]); useEffect(()=>{ if(toast){const timer=setTimeout(()=>setToast(""),3200);return()=>clearTimeout(timer)}},[toast]);
-  const notify=(message)=>setToast(message); const go=(next)=>{setPage(next);setMobileOpen(false);const paths={home:"/",services:"/services",service:"/booking",confirmation:"/booking-confirmation",orders:"/orders",profile:"/profile",professional:"/professional",admin:"/admin",support:"/support",tracking:active?`/track/${active.id}`:"/track", "order-details":active?`/orders/${active.id}`:"/orders"};const target=paths[next]||"/";if(window.location.pathname!==target)window.history.pushState({},"",target);window.scrollTo({top:0,behavior:"smooth"})}; const updateForm=(key,value)=>setBookingForm((old)=>({...old,[key]:value})); const activeServices=useMemo(()=>services.filter((item)=>item.active&&item.name.toLowerCase().includes(query.toLowerCase())),[services,query]);
-  const openService=(service)=>{setSelectedService(service);setBookingStep(0);setBookingForm((old)=>({...old,name:user?.name||"",phone:user?.phone||"",email:user?.email||""}));go("service")};
-  const requireLogin=(destination)=>{if(user)go(destination);else setLoginOpen(true)};
-  const updateBooking=(id,changes)=>setBookings((all)=>all.map((item)=>item.id===id?{...item,...changes}:item));
-  const confirmBooking=()=>{const phone=bookingForm.phone.replace(/\D/g,"");if(!bookingForm.name||phone.length!==10||!bookingForm.address||!bookingForm.city||bookingForm.pincode.length!==6||!bookingForm.date||!bookingForm.time)return notify("Complete name, valid mobile, address, city, pincode, date and time first."); const subtotal=selectedService.price*Number(bookingForm.quantity||1);const discount=bookingForm.coupon.toUpperCase()==="HOMEFIX10"?Math.round(subtotal*.1):0;const fee=Math.round(subtotal*.05);const total=subtotal+fee-discount;const professional=employees.find((item)=>item.active)||employees[0];const id=`HF${new Date().toISOString().slice(0,10).replaceAll("-","")}${String(bookings.length+1).padStart(4,"0")}`;const customerId=customerIdFor(user,phone);const payment=createPayment({bookingId:id,customerId,amount:total,paymentMethod:bookingForm.payment});const booking={id,customerId,employeeId:null,service:selectedService.name,serviceId:selectedService.id,image:selectedService.image,subService:bookingForm.subService,customer:bookingForm.name,phone,email:bookingForm.email,address:`${bookingForm.address}${bookingForm.landmark?`, ${bookingForm.landmark}`:""}, ${bookingForm.city} - ${bookingForm.pincode}`,date:bookingForm.date,time:bookingForm.time,amount:total,subtotal,fee,discount,payment:bookingForm.payment,paymentStatus:payment.paymentStatus,transactionId:payment.transactionId,status:"CONFIRMED",employee:null,professional,problem:bookingForm.problem,createdAt:new Date().toISOString()};setBookings((all)=>[booking,...all]);setPayments((all)=>[payment,...all]);setActive(booking);go("confirmation")};
-  const changeStatus=(booking,next)=>{const canonical=normalizeStatus(next);updateBooking(booking.id,{status:canonical});setActive({...booking,status:canonical});notify(`${booking.id} updated to ${statusLabels[canonical]||canonical}.`)};
-  const login=(role,details)=>{if(!details.name||details.phone.replace(/\D/g,"").length!==10)return notify("Enter a name and valid 10-digit Indian mobile number.");const account={...details,role};save("homefix_current_user",account);setUser(account);setLoginOpen(false);go(role==="professional"?"professional":role==="admin"?"admin":"home");notify(`Signed in as ${role}.`)};
-  const navItems=[ ["home","Home"],["services","Services"],["orders","My Orders"],["tracking","Track"],["profile","Profile"] ];
-  return <div className="app-shell"><header className="header"><button className="brand" onClick={()=>go("home")}><span className="brand-mark">H</span><span><b>HOMEFIX</b><small>Trusted home & mobility services</small></span></button><nav className={mobileOpen?"nav open":"nav"}>{navItems.map(([target,label])=><button key={target} onClick={()=>target==="home"||target==="services"?go(target):requireLogin(target)}>{label}</button>)}{user?.role==="professional"&&<button onClick={()=>go("professional")}>Professional</button>}{user?.role==="admin"&&<button onClick={()=>go("admin")}>Admin</button>}<button onClick={()=>setSupportOpen(true)}>Support</button></nav><div className="header-actions">{user?<button className="user-chip" onClick={()=>requireLogin("profile")}><User size={16}/>{user.name}</button>:<button className="outline-btn" onClick={()=>setLoginOpen(true)}>Sign In</button>}<button className="icon-btn menu-btn" onClick={()=>setMobileOpen(!mobileOpen)}><Menu/></button></div></header>
-    {page==="home"&&<Home services={activeServices} query={query} setQuery={setQuery} onService={openService} onServices={()=>go("services")} onOrders={()=>requireLogin("orders")} onLocation={()=>navigator.geolocation?navigator.geolocation.getCurrentPosition(()=>notify("Current location detected."),()=>notify("Location permission unavailable.")):notify("Location is unavailable in this browser.")} />}
-    {page==="services"&&<Services services={activeServices} query={query} setQuery={setQuery} onService={openService}/>} {page==="service"&&<Booking service={selectedService} form={bookingForm} update={updateForm} step={bookingStep} setStep={setBookingStep} onBack={()=>bookingStep?setBookingStep(bookingStep-1):go("services")} onConfirm={confirmBooking}/>} {page==="confirmation"&&<Confirmation booking={active} onTrack={()=>go("tracking")} onOrders={()=>go("orders")} onHome={()=>go("home")} notify={notify} onCancel={(booking)=>changeStatus(booking,"CANCELLED")} onCall={(professional)=>notify(`Calling ${professional.name}...`)}/>} {page==="orders"&&<Orders bookings={bookings} onOpen={(booking)=>{setActive(booking);go("order-details")}} onTrack={(booking)=>{setActive(booking);go("tracking")}} onCancel={(booking)=>changeStatus(booking,"CANCELLED")} onRebook={(booking)=>openService(services.find((item)=>item.id===booking.serviceId)||services[0])} onReschedule={(booking)=>{setActive(booking);notify("Choose a new date from booking details.")}} onDownload={(booking)=>downloadInvoice(booking)}/>} {page==="order-details"&&<OrderDetails booking={active} onBack={()=>go("orders")} onTrack={()=>go("tracking")} onDownload={()=>downloadInvoice(active)}/>} {page==="tracking"&&<Tracking booking={active||bookings[0]} onStatus={changeStatus} onBack={()=>go("orders")} notify={notify}/>} {page==="profile"&&<Profile user={user} bookings={bookings} notify={notify} logout={()=>{localStorage.removeItem("homefix_current_user");setUser(null);go("home")}}/>} {page==="professional"&&<Professional bookings={bookings} employees={employees} onStatus={changeStatus} notify={notify}/>} {page==="admin"&&<Admin bookings={bookings} services={services} setServices={setServices} employees={employees} setEmployees={setEmployees} payments={payments} onStatus={changeStatus} onAssign={(booking,employee)=>updateBooking(booking.id,{employee,employeeId:employee?.id||null,status:employee?"ASSIGNED":"CONFIRMED"})}/>} {page==="support"&&<Support notify={notify}/>} {loginOpen&&<LoginModal close={()=>setLoginOpen(false)} submit={login}/>} {supportOpen&&<SupportModal close={()=>setSupportOpen(false)} notify={notify}/>} {toast&&<div className="toast"><CheckCircle2 size={17}/>{toast}</div>}<footer className="footer"><b>HOMEFIX</b><span>Trusted home & mobility services</span><button className="text-btn" onClick={()=>setSupportOpen(true)}>Help & support</button><span>Safe · Reliable · Professional</span></footer></div>;
+  if (!isSupabaseConfigured) return <ConfigurationRequired />;
+  return <AuthenticatedApp />;
 }
 
-function Home({services,query,setQuery,onService,onServices,onOrders,onLocation}){return <main><section className="hero"><div className="hero-copy"><span className="eyebrow"><ShieldCheck size={16}/> TRUSTED LOCAL PROFESSIONALS</span><h1>Book a professional.<br/><em>Fix your home.</em></h1><p>From everyday repairs and cleaning to rides across the city, trusted help arrives at your doorstep.</p><div className="search-box hero-search"><Search size={19}/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="What do you need help with?"/><button onClick={onServices}>Search</button></div><div className="hero-actions"><button className="primary-btn" onClick={onServices}>Explore services <ArrowRight size={18}/></button><button className="text-btn" onClick={onOrders}>View my orders</button><button className="text-btn" onClick={onLocation}><LocateFixed size={16}/> Current location</button></div></div><div className="hero-art"><img src={img.cleaning} alt="Professional cleaning a home"/><div className="floating-proof"><CheckCircle2 size={20}/><span><b>4.9/5</b><small>Rated by 2,000+ homes</small></span></div></div></section><section className="trust-strip"><span><ShieldCheck/> Verified professionals</span><span><Clock3/> Same-day availability</span><span><WalletCards/> Transparent pricing</span></section><section className="content-section"><SectionTitle eyebrow="POPULAR SERVICES" title="What can we help with?" action="View all" onClick={onServices}/><div className="service-grid">{services.slice(0,6).map((service)=><ServiceCard service={service} onClick={()=>onService(service)} key={service.id}/>)}</div><div className="offer-banner"><div><span className="eyebrow">WELCOME OFFER</span><h3>10% off your first fix</h3><p>Use code <b>HOMEFIX10</b> at checkout.</p></div><button className="secondary-btn" onClick={onServices}>Book now <ArrowRight size={16}/></button></div><SectionTitle eyebrow="CUSTOMER REVIEWS" title="Trusted in homes across India"/><div className="review-grid"><Review name="Priya S." text="Ravi arrived on time and fixed our leaking tap in one visit."/><Review name="Aman K." text="The cleaning team was professional, quick and transparent."/><Review name="Neha R." text="Booking was simple and I could track my professional throughout."/></div></section></main>}
-function SectionTitle({eyebrow,title,action,onClick}){return <div className="section-heading"><div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div>{action&&<button className="text-btn" onClick={onClick}>{action}<ArrowRight size={16}/></button>}</div>}
-function ServiceCard({service,onClick}){return <button className="service-card" onClick={onClick}><img src={service.image} alt=""/><span><b>{service.name}</b><small>{service.description}</small><strong>From {money(service.price)}</strong></span><ChevronRight/></button>}
-function Services({services,query,setQuery,onService}){return <main className="content-section page-content"><div className="page-heading"><span className="eyebrow">THE HOMEFIX DIRECTORY</span><h1>Services for every corner of home.</h1><p>Choose a service and we will match you with a verified professional.</p></div><div className="search-box"><Search size={19}/><input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Search services"/></div><div className="service-grid full">{services.map((service)=><ServiceCard service={service} onClick={()=>onService(service)} key={service.id}/>)}</div>{!services.length&&<Empty text="No services match your search."/>}</main>}
-function Booking({service,form,update,step,setStep,onBack,onConfirm}){if(!service)return <Empty text="Choose a service to begin."/>;const subtotal=service.price*Number(form.quantity||1);const discount=form.coupon.toUpperCase()==="HOMEFIX10"?Math.round(subtotal*.1):0;const total=subtotal+Math.round(subtotal*.05)-discount;const next=()=>{if(step===1&&(!form.name||form.phone.length!==10||!form.address||!form.city||form.pincode.length!==6))return;setStep(step+1)};return <main className="booking-page"><button className="back-link" onClick={onBack}><ArrowLeft size={17}/> Back</button><div className="progress">{["Service","Details","Schedule","Payment"].map((label,index)=><span className={index<=step?"done":""} key={label}><i>{index<step?<Check size={14}/>:index+1}</i>{label}</span>)}</div><div className="booking-layout"><section className="booking-main">{step===0&&<><img className="booking-image" src={service.image} alt={service.name}/><span className="eyebrow">SERVICE DETAILS</span><h1>{service.name}</h1><p className="lead">{service.description}. Choose the right option and tell your professional what needs attention.</p><label>Service option<select value={form.subService} onChange={(e)=>update("subService",e.target.value)}>{(service.subServices||["Standard service","Priority service"]).map((option)=><option key={option}>{option}</option>)}</select></label><div className="option-row"><div><b>Quantity</b><small>Rooms, items or units</small></div><div className="stepper"><button onClick={()=>update("quantity",Math.max(1,form.quantity-1))}>−</button><b>{form.quantity}</b><button onClick={()=>update("quantity",form.quantity+1)}>+</button></div></div><label>Problem description<textarea value={form.problem} onChange={(e)=>update("problem",e.target.value)} placeholder="Tell your professional what needs attention..."/></label><label>Upload problem image<input type="file" accept="image/*" onChange={()=>update("image","Problem image attached")}/><small>{form.image||"Optional"}</small></label></>}{step===1&&<Details form={form} update={update}/>} {step===2&&<Schedule form={form} update={update}/>} {step===3&&<Payment form={form} update={update} total={total}/>}</section><aside className="price-card"><span className="eyebrow">PRICE SUMMARY</span><h3>{service.name}</h3><div><span>Service price</span><b>{money(subtotal)}</b></div><div><span>Platform fee</span><b>{money(Math.round(subtotal*.05))}</b></div><div><span>Coupon discount</span><b>-{money(discount)}</b></div><hr/><div className="total"><span>Total</span><b>{money(total)}</b></div><label>Coupon<input value={form.coupon} onChange={(e)=>update("coupon",e.target.value)} placeholder="HOMEFIX10"/></label><button className="primary-btn wide" onClick={step===3?onConfirm:next}>{step===3?"Confirm Booking":"Continue"}<ArrowRight size={17}/></button></aside></div></main>}
-function Details({form,update}){return <div><span className="eyebrow">CUSTOMER DETAILS</span><h1>Where should we come?</h1><div className="form-grid">{[["name","Full name","Your name"],["phone","Mobile number","10-digit mobile"],["email","Email","you@example.com"],["address","Address","House no., street"],["landmark","Landmark","Nearby landmark"],["city","City","City"],["pincode","Pincode","6-digit pincode"]].map(([key,label,placeholder])=><label key={key}>{label}<input value={form[key]} onChange={(e)=>update(key,key==="phone"||key==="pincode"?e.target.value.replace(/\D/g,"").slice(0,key==="phone"?10:6):e.target.value)} placeholder={placeholder}/></label>)}</div></div>}
-function Schedule({form,update}){return <div><span className="eyebrow">SCHEDULE</span><h1>Choose a convenient time.</h1><p className="lead">Your professional will arrive during the selected two-hour window.</p><label>Date<input type="date" min={dateToday()} value={form.date} onChange={(e)=>update("date",e.target.value)}/></label><label>Time slot<select value={form.time} onChange={(e)=>update("time",e.target.value)}><option>10:00 AM - 12:00 PM</option><option>12:00 PM - 02:00 PM</option><option>03:00 PM - 05:00 PM</option><option>06:00 PM - 08:00 PM</option></select></label></div>}
-function Payment({form,update,total}){return <div><span className="eyebrow">DEMO PAYMENT</span><h1>Choose how to pay.</h1><p className="lead">Simulated checkout only. No real money will be charged.</p><div className="payment-options">{["UPI","Card","Wallet","Cash on Service"].map((method)=><button className={form.payment===method?"payment-option selected":"payment-option"} onClick={()=>update("payment",method)} key={method}>{method==="Card"?<CreditCard/>:method==="UPI"?<Zap/>:<WalletCards/>}<b>{method}</b><span>{method==="Cash on Service"?"Pay after work":"Demo checkout"}</span></button>)}</div>{form.payment!=="Cash on Service"&&form.paymentState!=="Paid"&&<div className="demo-payment"><input placeholder={form.payment==="UPI"?"name@bank":"4242 4242 4242 4242"}/><button className="secondary-btn" onClick={()=>update("paymentState","Paid")}>Simulate payment success</button><button className="danger-btn" onClick={()=>update("paymentState","Failed")}>Simulate failed payment</button></div>}{form.paymentState==="Paid"&&<div className="success-note"><CheckCircle2/> Payment successful. Transaction will be recorded.</div>}{form.paymentState==="Failed"&&<div className="error-note">Payment failed. Retry the demo payment to continue.</div>}<div className="payment-total">Amount due <b>{money(total)}</b></div></div>}
-function Confirmation({booking,onTrack,onOrders,onHome,notify,onCancel,onCall}){if(!booking)return <Empty text="No booking selected."/>;return <main className="center-page"><div className="confirmation"><div className="success-icon"><Check size={30}/></div><span className="eyebrow">BOOKING CONFIRMED</span><h1>Booking Confirmed!</h1><p>Your HOMEFIX professional will take it from here.</p><div className="reference-card"><small>BOOKING REFERENCE</small><b>{booking.id}</b><span>Professional assignment in progress</span></div><div className="detail-list"><div><span>Customer</span><b>{booking.customer}</b></div><div><span>Service</span><b>{booking.service}</b></div><div><span>Professional</span><b>{booking.professional?.name||"Being assigned"}</b></div><div><span>Date & time</span><b>{booking.date} · {booking.time}</b></div><div><span>Address</span><b>{booking.address}</b></div><div><span>Mobile</span><b>{booking.phone}</b></div><div><span>Service charge</span><b>{money(booking.subtotal)}</b></div><div><span>Taxes and fees</span><b>{money(booking.fee)}</b></div><div><span>Discount</span><b>-{money(booking.discount)}</b></div><div><span>Amount</span><b>{money(booking.amount)}</b></div><div><span>Payment / status</span><b>{booking.paymentStatus} · {booking.status}</b></div></div><div className="hero-actions"><button className="primary-btn" onClick={onTrack}>Track booking <ArrowRight size={17}/></button><button className="secondary-btn" onClick={()=>onCall(booking.professional||employeesSeed[0])}><Phone size={16}/> Call professional</button><button className="danger-btn" onClick={()=>onCancel(booking)}>Cancel booking</button><button className="secondary-btn" onClick={onOrders}>My orders</button><button className="text-btn" onClick={()=>{window.print();notify("Print dialog opened.")}}><Printer size={16}/> Print confirmation</button><button className="text-btn" onClick={()=>{downloadInvoice(booking);notify("Confirmation downloaded.")}}><Download size={16}/> Download</button><button className="text-btn" onClick={onHome}>Back home</button></div></div></main>}
-function Orders({bookings,onOpen,onTrack,onCancel,onReschedule,onRebook,onDownload}){const [tab,setTab]=useState("Upcoming");const groups={Upcoming:bookings.filter((b)=>!["COMPLETED","CANCELLED"].includes(normalizeStatus(b.status))),Ongoing:bookings.filter((b)=>["ASSIGNED","ON_THE_WAY","ARRIVED","SERVICE_STARTED"].includes(normalizeStatus(b.status))),Completed:bookings.filter((b)=>normalizeStatus(b.status)==="COMPLETED"),Cancelled:bookings.filter((b)=>normalizeStatus(b.status)==="CANCELLED")};const list=groups[tab];return <main className="content-section page-content"><div className="page-heading"><span className="eyebrow">CUSTOMER SPACE</span><h1>My Orders</h1><p>Your bookings, payments and service history.</p></div><div className="order-tabs">{Object.keys(groups).map((item)=><button className={tab===item?"selected":""} onClick={()=>setTab(item)} key={item}>{item} <small>{groups[item].length}</small></button>)}</div>{list.length?<div className="orders-list">{list.map((booking)=><OrderCard booking={booking} onOpen={onOpen} onTrack={onTrack} onCancel={onCancel} onReschedule={onReschedule} onRebook={onRebook} onDownload={onDownload} key={booking.id}/>)}</div>:<Empty text={`No ${tab.toLowerCase()} bookings yet.`}/>}</main>}
-function OrderCard({booking,onOpen,onTrack,onCancel,onReschedule,onRebook,onDownload}){return <article className="order-card expanded"><img src={booking.image} alt=""/><span><b>{booking.service}</b><small>{booking.id} · {booking.date} · {booking.time}</small><small>Professional: {booking.professional?.name||"Being assigned"}</small><strong>{money(booking.amount)} · {booking.paymentStatus}</strong></span><Badge status={booking.status}/><div className="order-actions"><button onClick={()=>onOpen(booking)}>View details</button><button onClick={()=>onTrack(booking)}>Track</button>{normalizeStatus(booking.status)!=="CANCELLED"&&normalizeStatus(booking.status)!=="COMPLETED"&&<button onClick={()=>onCancel(booking)}>Cancel</button>}<button onClick={()=>onReschedule(booking)}>Reschedule</button><button onClick={()=>onRebook(booking)}>Rebook</button><button onClick={()=>onDownload(booking)}>Invoice</button></div></article>}
-function OrderDetails({booking,onBack,onTrack,onDownload}){if(!booking)return <Empty text="No order selected."/>;return <main className="content-section page-content"><button className="back-link" onClick={onBack}><ArrowLeft size={17}/> My orders</button><div className="panel order-detail"><span className="eyebrow">BOOKING DETAILS</span><h1>{booking.service}</h1><Badge status={booking.status}/><div className="detail-list"><div><span>Booking ID</span><b>{booking.id}</b></div><div><span>Professional</span><b>{booking.professional?.name||"Being assigned"}</b></div><div><span>Date and time</span><b>{booking.date} · {booking.time}</b></div><div><span>Address</span><b>{booking.address}</b></div><div><span>Problem</span><b>{booking.problem||"Standard service"}</b></div><div><span>Total</span><b>{money(booking.amount)}</b></div><div><span>Payment</span><b>{booking.paymentStatus} {booking.transactionId?`· ${booking.transactionId}`:""}</b></div></div><div className="hero-actions"><button className="primary-btn" onClick={onTrack}>Track booking</button><button className="secondary-btn" onClick={onDownload}>Download invoice</button></div></div></main>}
-function Tracking({booking,onStatus,onBack,notify}){if(!booking)return <Empty text="No booking to track yet."/>;const current=statuses.indexOf(normalizeStatus(booking.status));const professional=booking.employee||booking.professional||employeesSeed[0];return <main className="content-section page-content"><button className="back-link" onClick={onBack}><ArrowLeft size={17}/> My orders</button><div className="tracking-head"><div><span className="eyebrow">LIVE BOOKING</span><h1>{booking.service}</h1><p>{booking.id} · {booking.address}</p></div><Badge status={booking.status}/></div><div className="tracking-grid"><section className="panel"><div className="map-placeholder"><MapPin size={28}/><b>Map unavailable</b><small>Live map is optional in demo mode</small></div><h3>Progress timeline</h3><div className="timeline">{statuses.map((label,index)=><div className={index<=current?"timeline-item active":"timeline-item"} key={label}><i>{index<current?<Check size={14}/>:index===current?<span/>:""}</i><span><b>{statusLabels[label]||label}</b><small>{index<=current?"Completed":"Awaiting update"}</small></span></div>)}</div><button className="secondary-btn wide" onClick={()=>onStatus(booking,statuses[Math.min(current+1,5)])}>Simulate next status <ArrowRight size={17}/></button></section><section className="panel professional"><h3>Your professional</h3><div className="person"><span className="avatar">{professional.avatar}</span><span><b>{professional.name}</b><small><Star size={14} fill="currentColor"/> {professional.rating} · Verified</small></span></div><p><Clock3 size={16}/> Estimated arrival: 25 minutes</p><p><Phone size={16}/> {professional.phone}</p><div className="hero-actions"><button className="secondary-btn" onClick={()=>notify(`Calling ${professional.name}...`)}><Phone size={16}/> Call</button><button className="secondary-btn" onClick={()=>notify("Chat opened for demo.")}><MessageCircle size={16}/> Chat</button></div><RatingReview booking={booking} notify={notify}/><button className="danger-btn" onClick={()=>onStatus(booking,"CANCELLED")}>Cancel booking</button></section></div></main>}
-function RatingReview({booking,notify}){const [rating,setRating]=useState(0);const [comment,setComment]=useState("");const submit=()=>{if(!rating)return notify("Choose a rating first.");const review={id:makeId("REV"),bookingId:booking.id,customerId:booking.customerId||null,employeeId:booking.employeeId||booking.employee?.id||null,rating,comment};save("homefix_reviews",[...read("homefix_reviews",[]),review]);notify("Thanks, your review was saved.");setComment("")};return <div className="review-form"><b>Rate your service</b><div>{[1,2,3,4,5].map((value)=><button className="icon-btn" aria-label={`${value} stars`} onClick={()=>setRating(value)} key={value}>{value<=rating?"*":"."}</button>)}</div><textarea value={comment} onChange={(event)=>setComment(event.target.value)} placeholder="Share your experience"/><button className="secondary-btn" onClick={submit}>Save review</button></div>}
-function Profile({user,bookings,notify,logout}){const [addresses,setAddresses]=useState(()=>read("homefix_addresses",[]));const [editing,setEditing]=useState(null);const saveAddress=(event)=>{event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget));const value={id:editing?.id||makeId("ADDR"),label:data.label,address:data.address};setAddresses((all)=>editing?all.map((item)=>item.id===editing.id?value:item):[...all,value]);save("homefix_addresses",editing?addresses.map((item)=>item.id===editing.id?value:item):[...addresses,value]);setEditing(null);notify("Address saved.")};return <main className="content-section page-content"><div className="profile-hero"><span className="avatar large">{(user?.name||"U").slice(0,2).toUpperCase()}</span><div><span className="eyebrow">MY PROFILE</span><h1>{user?.name}</h1><p>{user?.phone} · {user?.email}</p></div><button className="secondary-btn" onClick={logout}><LogOut size={16}/> Logout</button></div><div className="profile-grid"><section className="panel"><h3>Account details</h3><div className="detail-list"><div><span>Name</span><b>{user?.name}</b></div><div><span>Mobile</span><b>{user?.phone}</b></div><div><span>Email</span><b>{user?.email}</b></div></div><button className="secondary-btn" onClick={()=>notify("Profile editing is ready for your saved demo account.")}><Pencil size={16}/> Edit profile</button></section><section className="panel"><h3>Saved addresses <button className="icon-btn" onClick={()=>setEditing({})}><Plus size={16}/></button></h3>{addresses.length?addresses.map((item)=><div className="saved-row" key={item.id}><MapPin size={16}/><span><b>{item.label}</b><small>{item.address}</small></span><button className="icon-btn" onClick={()=>setEditing(item)}><Pencil size={15}/></button><button className="icon-btn danger-icon" onClick={()=>{const next=addresses.filter((x)=>x.id!==item.id);setAddresses(next);save("homefix_addresses",next)}}><Trash2 size={15}/></button></div>):<Empty text="No saved addresses yet."/>}</section></div><div className="profile-links"><button onClick={()=>notify(`${bookings.length} bookings in your order history.`)}><Package/> Order history</button><button onClick={()=>notify("No saved payment methods yet.")}><WalletCards/> Payment methods</button><button onClick={()=>notify("Notifications are up to date.")}><CheckCircle2/> Notifications</button><button onClick={()=>notify("Support is ready to help.")}><HelpCircle/> Help & support</button></div>{editing&&<div className="modal-backdrop"><form className="modal" onSubmit={saveAddress}><button type="button" className="modal-close" onClick={()=>setEditing(null)}><X/></button><h2>{editing.id?"Edit address":"Add address"}</h2><label>Label<input name="label" defaultValue={editing.label||"Home"} required/></label><label>Address<input name="address" defaultValue={editing.address||""} required/></label><button className="primary-btn wide">Save address</button></form></div>}</main>}
- function Professional({bookings,employees,onStatus,notify}){const employee=employees[0];const [available,setAvailable]=useState(employee.available);const actions={CONFIRMED:["Accept booking","ASSIGNED"],ASSIGNED:["Start job","ON_THE_WAY"],ON_THE_WAY:["Mark arrived","ARRIVED"],ARRIVED:["Start service","SERVICE_STARTED"],SERVICE_STARTED:["Complete service","COMPLETED"]};const jobs=bookings.filter((item)=>!["COMPLETED","CANCELLED"].includes(normalizeStatus(item.status)));return <main className="content-section page-content"><div className="dashboard-top"><div><span className="eyebrow">PROFESSIONAL DASHBOARD</span><h1>Good morning, {employee.name.split(" ")[0]}.</h1><p>Manage jobs, availability and earnings.</p></div><button className={available?"primary-btn":"secondary-btn"} onClick={()=>setAvailable(!available)}>{available?"Available":"Offline"}</button></div><div className="professional-profile panel"><span className="avatar large">{employee.avatar}</span><div><h3>{employee.name}</h3><p>{employee.id} · {employee.phone}</p><small>{employee.skills} · {employee.area} · ★ {employee.rating}</small></div></div><div className="stat-grid four"><Stat label="Today's jobs" value={jobs.length} icon={<CalendarDays/>}/><Stat label="Pending" value={jobs.length} icon={<Clock3/>}/><Stat label="Completed jobs" value={employee.jobs} icon={<CheckCircle2/>}/><Stat label="Earnings" value={money(employee.earnings)} icon={<WalletCards/>}/></div><h2 className="subheading">Assigned jobs</h2>{jobs.length?<div className="job-grid">{jobs.map((booking)=><article className="job-card" key={booking.id}><div className="job-card-head"><b>{booking.id}</b><Badge status={booking.status}/></div><h3>{booking.service}</h3><p><User size={15}/> {booking.customer} · {booking.phone}</p><p><MapPin size={15}/> {booking.address}</p><p><CalendarDays size={15}/> {booking.date} · {booking.time}</p><div className="job-foot"><b>{money(booking.amount)}</b>{actions[normalizeStatus(booking.status)]&&<button className="primary-btn small" onClick={()=>onStatus(booking,actions[normalizeStatus(booking.status)][1])}>{actions[normalizeStatus(booking.status)][0]} <ArrowRight size={15}/></button>}</div><div className="job-tools"><button onClick={()=>notify(`Calling ${booking.customer}...`)}><Phone size={14}/> Call</button><button onClick={()=>notify("Navigation opened in demo mode.")}><MapPin size={14}/> Navigate</button><button onClick={()=>notify("Work image attached to job.")}><Plus size={14}/> Work image</button></div></article>)}</div>:<Empty text="No pending jobs right now."/>}</main>}
-function Admin({bookings,services,setServices,employees,setEmployees,payments,onStatus,onAssign}){const initialTab=()=>{const segment=window.location.pathname.split("/")[2];return segment?({bookings:"Bookings",customers:"Customers",employees:"Employees",services:"Services",payments:"Payments",reports:"Reports"}[segment]||"Dashboard"):"Dashboard"};const [tab,setTab]=useState(initialTab);const [editing,setEditing]=useState(null);const revenue=bookings.reduce((sum,item)=>sum+item.amount,0);const saveService=(event)=>{event.preventDefault();const data=Object.fromEntries(new FormData(event.currentTarget));const item={id:editing?.id||makeId("SVC"),name:data.name,description:data.description,price:Number(data.price),image:data.image||img.plumbing,active:true,subServices:["Standard service","Priority service"]};setServices((all)=>editing?.id?all.map((x)=>x.id===editing.id?item:x):[...all,item]);setEditing(null)};const nav=["Dashboard","Bookings","Customers","Employees","Services","Payments","Revenue","Offers/Coupons","Reviews","Complaints","Notifications","Reports","Settings"];return <main className="content-section page-content"><div className="admin-nav">{nav.map((item)=><button className={tab===item?"selected":""} onClick={()=>setTab(item)} key={item}>{item}</button>)}</div>{tab==="Dashboard"&&<><div className="dashboard-top"><div><span className="eyebrow">OPERATIONS CENTER</span><h1>Admin dashboard</h1><p>Manage the HOMEFIX marketplace in one place.</p></div><button className="primary-btn" onClick={()=>setTab("Services")}><Plus size={17}/> Add service</button></div><div className="stat-grid four"><Stat label="Total bookings" value={bookings.length} icon={<Package/>}/><Stat label="Today's bookings" value={bookings.filter((x)=>x.date===dateToday()).length} icon={<CalendarDays/>}/><Stat label="Active professionals" value={employees.filter((x)=>x.active&&x.available).length} icon={<Users/>}/><Stat label="Customers" value={new Set(bookings.map((x)=>x.phone)).size} icon={<User/>}/><Stat label="Revenue" value={money(revenue)} icon={<WalletCards/>}/><Stat label="Pending bookings" value={bookings.filter((x)=>!["COMPLETED","CANCELLED"].includes(normalizeStatus(x.status))).length} icon={<Clock3/>}/><Stat label="Completed" value={bookings.filter((x)=>x.status==="Completed").length} icon={<CheckCircle2/>}/><Stat label="Cancelled" value={bookings.filter((x)=>x.status==="Cancelled").length} icon={<X/>}/></div></>}{tab==="Bookings"&&<BookingAdmin bookings={bookings} employees={employees} onStatus={onStatus} onAssign={onAssign}/>} {tab==="Customers"&&<Customers bookings={bookings}/>} {tab==="Employees"&&<EmployeeAdmin employees={employees} setEmployees={setEmployees}/>} {tab==="Services"&&<ServiceAdmin services={services} setServices={setServices} setEditing={setEditing}/>} {tab==="Payments"&&<PaymentAdmin payments={payments}/>} {tab==="Reports"&&<Reports bookings={bookings} employees={employees}/>} {!["Dashboard","Bookings","Customers","Employees","Services","Payments","Reports"].includes(tab)&&<Empty text={`${tab} module is ready for demo management.`} action="Create demo notification" onClick={()=>{}}/>}{editing&&<div className="modal-backdrop"><form className="modal" onSubmit={saveService}><button type="button" className="modal-close" onClick={()=>setEditing(null)}><X/></button><h2>{editing.id?"Edit service":"Add service"}</h2><label>Service name<input name="name" defaultValue={editing.name||""} required/></label><label>Description<input name="description" defaultValue={editing.description||""} required/></label><label>Starting price<input name="price" type="number" defaultValue={editing.price||199} required/></label><label>Image URL<input name="image" defaultValue={editing.image||""}/></label><button className="primary-btn wide">Save service</button></form></div>}</main>}
-function BookingAdmin({bookings,employees,onStatus,onAssign}){return <section className="panel table-panel"><div className="panel-title"><h3>Bookings</h3><small>{bookings.length} records</small></div>{bookings.length?<div className="table-wrap"><table><thead><tr><th>Booking</th><th>Customer</th><th>Service</th><th>Employee</th><th>Amount</th><th>Payment</th><th>Status</th></tr></thead><tbody>{bookings.map((booking)=><tr key={booking.id}><td><b>{booking.id}</b><small>{booking.date}</small></td><td>{booking.customer}<small>{booking.phone}</small></td><td>{booking.service}</td><td><select value={booking.employee?.id||""} onChange={(e)=>onAssign(booking,employees.find((x)=>x.id===e.target.value)||null)}><option value="">Assign</option>{employees.map((x)=><option key={x.id} value={x.id}>{x.name}</option>)}</select></td><td>{money(booking.amount)}</td><td>{booking.paymentStatus}</td><td><select value={booking.status} onChange={(e)=>onStatus(booking,e.target.value)}>{statuses.map((s)=><option key={s}>{s}</option>)}</select></td></tr>)}</tbody></table></div>:<Empty text="Bookings will appear here."/>}</section>}
-function Customers({bookings}){const customers=Object.values(bookings.reduce((all,item)=>({...all,[item.phone]:{name:item.customer,phone:item.phone,email:item.email,bookings:(all[item.phone]?.bookings||0)+1,spent:(all[item.phone]?.spent||0)+item.amount}}),{}));return <section className="panel table-panel"><h3>Customers</h3>{customers.length?<div className="table-wrap"><table><thead><tr><th>Name</th><th>Phone</th><th>Email</th><th>Bookings</th><th>Total spending</th></tr></thead><tbody>{customers.map((x)=><tr key={x.phone}><td>{x.name}</td><td>{x.phone}</td><td>{x.email}</td><td>{x.bookings}</td><td>{money(x.spent)}</td></tr>)}</tbody></table></div>:<Empty text="No customers yet."/>}</section>}
-function EmployeeAdmin({employees,setEmployees}){return <section className="panel table-panel"><h3>Employees</h3><div className="table-wrap"><table><thead><tr><th>Employee</th><th>Phone</th><th>Skills</th><th>Rating</th><th>Jobs</th><th>Availability</th><th>Active</th></tr></thead><tbody>{employees.map((x)=><tr key={x.id}><td><b>{x.name}</b><small>{x.id}</small></td><td>{x.phone}</td><td>{x.skills}</td><td>★ {x.rating}</td><td>{x.jobs}</td><td>{x.available?"Available":"Offline"}</td><td><button className="secondary-btn" onClick={()=>setEmployees((all)=>all.map((item)=>item.id===x.id?{...item,active:!item.active}:item))}>{x.active?"Deactivate":"Activate"}</button></td></tr>)}</tbody></table></div></section>}
-function ServiceAdmin({services,setServices,setEditing}){return <section className="panel table-panel"><div className="panel-title"><h3>Services</h3><button className="primary-btn small" onClick={()=>setEditing({})}><Plus size={15}/> Add service</button></div>{services.map((service)=><div className="service-admin-row" key={service.id}><img src={service.image} alt=""/><span><b>{service.name}</b><small>{service.description} · From {money(service.price)}</small></span><button className="icon-btn" onClick={()=>setEditing(service)}><Pencil size={16}/></button><button className="icon-btn danger-icon" onClick={()=>setServices((all)=>all.filter((x)=>x.id!==service.id))}><Trash2 size={16}/></button></div>)}</section>}
-function PaymentAdmin({payments}){return <section className="panel table-panel"><h3>Payments</h3>{payments.length?<div className="table-wrap"><table><thead><tr><th>Transaction</th><th>Booking</th><th>Customer</th><th>Amount</th><th>Method</th><th>Status</th><th>Date</th></tr></thead><tbody>{payments.map((x)=><tr key={x.id}><td>{x.id}</td><td>{x.bookingId}</td><td>{x.customer}</td><td>{money(x.amount)}</td><td>{x.method}</td><td>{x.status}</td><td>{new Date(x.date).toLocaleDateString("en-IN")}</td></tr>)}</tbody></table></div>:<Empty text="No payments yet."/>}</section>}
-function Reports({bookings,employees}){return <><div className="stat-grid four"><Stat label="Revenue summary" value={money(bookings.reduce((a,b)=>a+b.amount,0))} icon={<WalletCards/>}/><Stat label="Booking summary" value={bookings.length} icon={<Package/>}/><Stat label="Top employee" value={employees[0]?.name||"-"} icon={<Users/>}/><Stat label="Customer statistics" value={new Set(bookings.map((x)=>x.phone)).size} icon={<User/>}/></div><section className="panel"><h3>Service performance</h3><p className="lead">Completed jobs, customer demand and revenue are calculated from persisted demo bookings.</p></section></>}
-function Support({notify}){const [ticket,setTicket]=useState("");return <main className="content-section page-content"><div className="page-heading"><span className="eyebrow">HELP CENTER</span><h1>How can we help?</h1><p>Find answers or send a support request to the HOMEFIX team.</p></div><div className="support-grid"><section className="panel"><h3>Frequently asked questions</h3>{["How do I reschedule a booking?","Can I pay after service?","How are professionals verified?","How do refunds work?"].map((question)=><button className="faq" key={question} onClick={()=>notify("Demo answer: our support team will guide you through this request.")}>{question}<ChevronRight size={16}/></button>)}</section><section className="panel"><h3>Contact support</h3><label>Booking-related complaint<textarea value={ticket} onChange={(e)=>setTicket(e.target.value)} placeholder="Tell us what happened..."/></label><button className="primary-btn" onClick={()=>{if(!ticket.trim())return notify("Describe your issue first.");const id=makeId("SUP");save("homefix_support",[...read("homefix_support",[]),{id,issue:ticket,status:"Open"}]);setTicket("");notify(`Support ticket ${id} created.`)}}>Create support ticket</button><button className="text-btn" onClick={()=>notify("Refund requests are reviewed by support within one business day.")}>Request refund</button></section></div></main>}
-function LoginModal({close,submit}){const [role,setRole]=useState("customer");const [details,setDetails]=useState({name:"Demo Customer",phone:"9876543210",email:"customer@homefix.demo"});const select=(value)=>{setRole(value);setDetails(value==="customer"?{name:"Demo Customer",phone:"9876543210",email:"customer@homefix.demo"}:value==="professional"?{name:"Ravi Kumar",phone:"9876543210",email:"ravi@homefix.demo"}:{name:"HOMEFIX Admin",phone:"9876543210",email:"admin@homefix.demo"})};return <div className="modal-backdrop"><div className="modal login-modal"><button className="modal-close" onClick={close}><X/></button><span className="eyebrow">WELCOME TO HOMEFIX</span><h2>Sign in to continue</h2><div className="role-tabs">{[["customer","Customer"],["professional","Professional"],["admin","Admin"]].map(([value,label])=><button className={role===value?"selected":""} onClick={()=>select(value)} key={value}>{label}</button>)}</div><button className="text-btn" onClick={()=>{setRole("customer");setDetails({name:"",phone:"",email:""})}}>Create customer account</button>{["name","phone","email"].map((key)=><label key={key}>{key==="phone"?"Mobile number":key[0].toUpperCase()+key.slice(1)}<input value={details[key]} onChange={(e)=>setDetails({...details,[key]:e.target.value})}/></label>)}<button className="primary-btn wide" onClick={()=>submit(role,details)}>Continue as {role}</button><small className="demo-note">Demo login is local to this browser. No real account or payment is created.</small></div></div>}
-function SupportModal({close,notify}){return <div className="modal-backdrop"><div className="modal"><button className="modal-close" onClick={close}><X/></button><h2>HOMEFIX support</h2><p className="lead">Our demo support team is available to help with bookings, payments and refunds.</p><button className="primary-btn wide" onClick={()=>{notify("Support chat opened.");close()}}><MessageCircle size={16}/> Start chat</button></div></div>}
-function Stat({label,value,icon}){return <div className="stat"><span className="stat-icon">{icon}</span><small>{label}</small><b>{value}</b></div>}
-function Badge({status}){const value=normalizeStatus(status);const label=statusLabels[value]||value;return <span className={`status status-${value.toLowerCase()}`}>{label}</span>}
-function Review({name,text}){return <article className="review panel"><span>★★★★★</span><p>“{text}”</p><b>{name}</b></article>}
-function Empty({text,action,onClick}){return <div className="empty"><Package size={28}/><p>{text}</p>{action&&<button className="primary-btn" onClick={onClick}>{action}</button>}</div>}
-function downloadInvoice(booking){if(!booking)return;const body=`HOMEFIX INVOICE\nBooking: ${booking.id}\nService: ${booking.service}\nCustomer: ${booking.customer}\nAmount: ${money(booking.amount)}\nPayment: ${booking.paymentStatus}`;const link=document.createElement("a");link.href=URL.createObjectURL(new Blob([body],{type:"text/plain"}));link.download=`${booking.id}-invoice.txt`;link.click();URL.revokeObjectURL(link.href)}
+function ConfigurationRequired() {
+  return (
+    <div className="app-shell">
+      <main className="center-page">
+        <div className="confirmation">
+          <div className="success-icon"><ShieldAlert size={30} /></div>
+          <span className="eyebrow">SETUP REQUIRED</span>
+          <h1>HOMEFIX database is not configured.</h1>
+          <p>
+            Add <b>VITE_SUPABASE_URL</b> and <b>VITE_SUPABASE_PUBLISHABLE_KEY</b> to <code>.env.local</code>,
+            then restart the dev server.
+          </p>
+        </div>
+      </main>
+    </div>
+  );
+}
 
+function AuthenticatedApp() {
+  const auth = useAuth();
+  const [page, setPage] = useState(pageFromPath);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [toast, setToast] = useState("");
+  const [supportOpen, setSupportOpen] = useState(false);
 
+  const [services] = useState(SERVICES);
+  const [employees] = useState(EMPLOYEES);
+  const [bookings, setBookings] = useState([]);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [bookingsError, setBookingsError] = useState("");
 
+  const [selectedService, setSelectedService] = useState(null);
+  const [active, setActive] = useState(null);
+  const [bookingStep, setBookingStep] = useState(0);
+  const [bookingSubmitting, setBookingSubmitting] = useState(false);
+  const [query, setQuery] = useState("");
+  const [bookingForm, setBookingForm] = useState(createEmptyBookingForm());
 
+  function createEmptyBookingForm() {
+    return {
+      quantity: 1, date: dateToday(), time: TIME_SLOTS[0], name: "", phone: "", email: "",
+      address: "", landmark: "", city: "", pincode: "", notes: "", coupon: "", payment: "Cash on Service",
+    };
+  }
 
+  const notify = (message) => setToast(message);
+  const go = (next, opts = {}) => {
+    setPage(next);
+    setMobileOpen(false);
+    const target = routeFor(next, opts.activeId ?? active?.id);
+    if (window.location.pathname !== target) window.history.pushState({}, "", target);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
+  useEffect(() => {
+    const onPopState = () => setPage(pageFromPath());
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = setTimeout(() => setToast(""), 3200);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
+  // Load "My Orders" fresh from Supabase whenever the customer opens that page.
+  useEffect(() => {
+    if (!auth.isAuthenticated || page !== "orders") return;
+    let cancelled = false;
+    setBookingsLoading(true);
+    setBookingsError("");
+    listMyBookings()
+      .then((rows) => {
+        if (cancelled) return;
+        setBookings(rows.map(mapRemoteBooking));
+      })
+      .catch((error) => {
+        console.error("[HOMEFIX] Booking load error:", error);
+        if (!cancelled) setBookingsError(error.message || "Unable to load your bookings.");
+      })
+      .finally(() => {
+        if (!cancelled) setBookingsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [auth.isAuthenticated, page]);
 
+  const customer = useMemo(() => {
+    if (!auth.profile) return null;
+    return {
+      id: auth.profile.id,
+      name: auth.profile.full_name || auth.profile.email,
+      phone: auth.profile.phone || "",
+      email: auth.profile.email || "",
+      role: auth.profile.role || "customer",
+    };
+  }, [auth.profile]);
 
+  const activeServices = useMemo(
+    () => services.filter((service) => service.active && service.name.toLowerCase().includes(query.toLowerCase())),
+    [services, query]
+  );
+
+  const requireAuth = (destination) => {
+    if (auth.isAuthenticated) go(destination);
+    else { notify("Please sign in to continue."); setLoginOpen(true); }
+  };
+
+  const openService = (service) => {
+    setSelectedService(service);
+    setBookingStep(0);
+    setBookingForm((old) => ({ ...old, name: customer?.name || "", phone: customer?.phone || "", email: customer?.email || "" }));
+    go("booking");
+  };
+
+  const updateForm = (key, value) => setBookingForm((old) => ({ ...old, [key]: value }));
+
+  const submitBooking = async () => {
+    if (bookingSubmitting) return;
+    if (!auth.isAuthenticated) {
+      notify("Please sign in to confirm your booking.");
+      setLoginOpen(true);
+      return;
+    }
+    if (!selectedService) return notify("Please select a service first.");
+    const phone = bookingForm.phone.replace(/\D/g, "");
+    if (!bookingForm.name.trim()) return notify("Enter the customer name.");
+    if (phone.length !== 10) return notify("Enter a valid 10-digit mobile number.");
+    if (!bookingForm.address.trim() || !bookingForm.city.trim() || !/^\d{6}$/.test(bookingForm.pincode)) {
+      return notify("Enter a complete address, city and 6-digit pincode.");
+    }
+    if (!bookingForm.date) return notify("Please select a valid booking date.");
+    if (!bookingForm.time) return notify("Please select a valid booking time.");
+    if (!bookingForm.payment) return notify("Please select a payment method.");
+
+    const subtotal = selectedService.price * Number(bookingForm.quantity || 1);
+    const discount = bookingForm.coupon.trim().toUpperCase() === "HOMEFIX10" ? Math.round(subtotal * 0.1) : 0;
+    const fee = Math.round(subtotal * 0.05);
+    const amount = Math.max(0, subtotal + fee - discount);
+    const address = `${bookingForm.address}${bookingForm.landmark ? `, ${bookingForm.landmark}` : ""}, ${bookingForm.city} - ${bookingForm.pincode}`;
+
+    setBookingSubmitting(true);
+    try {
+      const remote = await createBooking({
+        service: selectedService.name,
+        mobile: phone,
+        address,
+        bookingDate: bookingForm.date,
+        timeSlot: bookingForm.time,
+      });
+      const payment = createPayment({ bookingId: remote.id, customerId: remote.customer_id, amount, paymentMethod: bookingForm.payment });
+      const booking = {
+        ...mapRemoteBooking(remote),
+        customer: bookingForm.name,
+        amount,
+        subtotal,
+        fee,
+        discount,
+        payment: bookingForm.payment,
+        paymentStatus: payment.paymentStatus,
+      };
+      setBookings((all) => [booking, ...all]);
+      setActive(booking);
+      go("confirmation");
+    } catch (error) {
+      console.error("[HOMEFIX] Booking error:", error);
+      if (error.code === "42501") {
+        notify("Unable to create your booking. Please sign in again and try again.");
+      } else if (error.message?.includes("sign in")) {
+        notify(error.message);
+        setLoginOpen(true);
+      } else {
+        notify(error.message || "We couldn't confirm your booking. Please try again.");
+      }
+    } finally {
+      setBookingSubmitting(false);
+    }
+  };
+
+  const cancelBooking = async (booking) => {
+    const current = normalizeStatus(booking.status);
+    if (!["PENDING", "CONFIRMED"].includes(current)) return notify("Only pending or confirmed bookings can be cancelled.");
+    if (!window.confirm(`Cancel booking ${booking.id}?`)) return;
+    try {
+      const updated = await cancelMyBooking(booking.id);
+      const next = { ...booking, ...mapRemoteBooking(updated) };
+      setBookings((all) => all.map((item) => (item.id === booking.id ? next : item)));
+      setActive(next);
+      notify("Booking cancelled.");
+    } catch (error) {
+      console.error("[HOMEFIX] Booking cancellation error:", error);
+      notify(error.message || "Unable to cancel booking.");
+    }
+  };
+
+  const handleLogout = async () => {
+    await auth.signOut();
+    setActive(null);
+    setBookings([]);
+    go("home");
+  };
+
+  const navItems = [["home", "Home"], ["services", "Services"], ["orders", "My Orders"], ["profile", "Profile"]];
+
+  return (
+    <div className="app-shell">
+      <header className="header">
+        <button className="brand" onClick={() => go("home")}>
+          <span className="brand-mark">H</span>
+          <span><b>HOMEFIX</b><small>Trusted home & mobility services</small></span>
+        </button>
+        <nav className={mobileOpen ? "nav open" : "nav"}>
+          {navItems.map(([target, label]) => (
+            <button key={target} onClick={() => (target === "home" || target === "services" ? go(target) : requireAuth(target))}>
+              {label}
+            </button>
+          ))}
+          {customer?.role === "professional" && <button onClick={() => go("professional")}>Professional</button>}
+          {customer?.role === "admin" && <button onClick={() => go("admin")}>Admin</button>}
+          <button onClick={() => setSupportOpen(true)}>Support</button>
+        </nav>
+        <div className="header-actions">
+          {customer ? (
+            <button className="user-chip" onClick={() => go("profile")}><User size={16} />{customer.name}</button>
+          ) : (
+            <button className="outline-btn" onClick={() => setLoginOpen(true)}>Sign In</button>
+          )}
+          <button className="icon-btn menu-btn" onClick={() => setMobileOpen(!mobileOpen)} aria-label="Menu"><Menu /></button>
+        </div>
+      </header>
+
+      {page === "home" && (
+        <Home
+          services={activeServices}
+          query={query}
+          setQuery={setQuery}
+          onService={openService}
+          onServices={() => go("services")}
+          onOrders={() => requireAuth("orders")}
+        />
+      )}
+      {page === "services" && (
+        <Services services={activeServices} query={query} setQuery={setQuery} onService={openService} />
+      )}
+      {page === "booking" && (
+        <Booking
+          service={selectedService}
+          form={bookingForm}
+          update={updateForm}
+          step={bookingStep}
+          setStep={setBookingStep}
+          onBack={() => (bookingStep ? setBookingStep(bookingStep - 1) : go("services"))}
+          onConfirm={submitBooking}
+          submitting={bookingSubmitting}
+        />
+      )}
+      {page === "confirmation" && (
+        <Confirmation
+          booking={active}
+          onTrack={() => go("tracking")}
+          onOrders={() => go("orders")}
+          onHome={() => go("home")}
+          onCancel={cancelBooking}
+          onCall={() => notify("Calling your assigned professional...")}
+          notify={notify}
+        />
+      )}
+      {page === "orders" && (
+        <Orders
+          bookings={bookings}
+          loading={bookingsLoading}
+          error={bookingsError}
+          onOpen={(booking) => { setActive(booking); go("order-details", { activeId: booking.id }); }}
+          onTrack={(booking) => { setActive(booking); go("tracking", { activeId: booking.id }); }}
+          onCancel={cancelBooking}
+          onDownload={downloadInvoice}
+        />
+      )}
+      {page === "order-details" && (
+        <OrderDetails booking={active} onBack={() => go("orders")} onTrack={() => go("tracking", { activeId: active?.id })} onDownload={() => downloadInvoice(active)} />
+      )}
+      {page === "tracking" && (
+        <Tracking
+          booking={active}
+          employees={employees}
+          onBack={() => go("orders")}
+          notify={notify}
+          onLiveUpdate={(next) => {
+            setActive(next);
+            setBookings((all) => all.map((item) => (item.id === next.id ? next : item)));
+          }}
+        />
+      )}
+      {page === "profile" && (
+        <Profile customer={customer} bookings={bookings} notify={notify} logout={handleLogout} onSave={auth.refreshProfile} />
+      )}
+      {page === "professional" && (customer?.role === "professional" ? (
+        <ProfessionalDashboard bookings={bookings} setBookings={setBookings} employee={employees[0]} notify={notify} />
+      ) : <AccessDenied />)}
+      {page === "admin" && (customer?.role === "admin" ? (
+        <AdminDashboard bookings={bookings} setBookings={setBookings} services={services} employees={employees} notify={notify} />
+      ) : <AccessDenied />)}
+
+      {loginOpen && (
+        <AuthModal
+          close={() => setLoginOpen(false)}
+          onAuthenticated={() => { setLoginOpen(false); notify("Signed in successfully."); }}
+        />
+      )}
+      {supportOpen && <SupportModal close={() => setSupportOpen(false)} notify={notify} />}
+      {toast && <div className="toast"><CheckCircle2 size={17} />{toast}</div>}
+
+      <footer className="footer">
+        <b>HOMEFIX</b>
+        <span>Trusted home & mobility services</span>
+        <button className="text-btn" onClick={() => setSupportOpen(true)}>Help & support</button>
+        <span>Safe · Reliable · Professional</span>
+      </footer>
+    </div>
+  );
+}
+
+function mapRemoteBooking(row) {
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    service: row.service,
+    phone: row.mobile,
+    address: row.address,
+    date: row.booking_date,
+    time: row.booking_time,
+    amount: row.amount || 0,
+    status: normalizeStatus(row.status),
+    createdAt: row.created_at,
+  };
+}
+
+// ---------------------------------------------------------------------
+// Presentational pages
+// ---------------------------------------------------------------------
+
+function AccessDenied() {
+  return (
+    <main className="center-page">
+      <div className="confirmation">
+        <div className="success-icon"><ShieldAlert size={30} /></div>
+        <span className="eyebrow">ACCESS DENIED</span>
+        <h1>You don't have permission to view this page.</h1>
+        <p>This area is restricted to authorized HOMEFIX accounts.</p>
+      </div>
+    </main>
+  );
+}
+
+function SectionTitle({ eyebrow, title, action, onClick }) {
+  return (
+    <div className="section-heading">
+      <div><span className="eyebrow">{eyebrow}</span><h2>{title}</h2></div>
+      {action && <button className="text-btn" onClick={onClick}>{action}<ArrowRight size={16} /></button>}
+    </div>
+  );
+}
+
+function ServiceCard({ service, onClick }) {
+  return (
+    <button className="service-card" onClick={onClick}>
+      <img src={service.image} alt="" onError={(event) => { event.currentTarget.src = img.appliance; }} />
+      <span><b>{service.name}</b><small>{service.description}</small><strong>From {money(service.price)}</strong></span>
+      <ChevronRight />
+    </button>
+  );
+}
+
+function Home({ services, query, setQuery, onService, onServices, onOrders }) {
+  const useCurrentLocation = () => {
+    if (!navigator.geolocation) return alert("Location is not supported by this browser.");
+    navigator.geolocation.getCurrentPosition(
+      () => alert("Current location detected."),
+      (error) => alert(error.code === error.PERMISSION_DENIED ? "Location permission was denied." : "Unable to fetch your location.")
+    );
+  };
+  return (
+    <main>
+      <section className="hero">
+        <div className="hero-copy">
+          <span className="eyebrow"><ShieldCheck size={16} /> TRUSTED LOCAL PROFESSIONALS</span>
+          <h1>Book a professional.<br /><em>Fix your home.</em></h1>
+          <p>From everyday repairs and cleaning to appliance care, trusted help arrives at your doorstep.</p>
+          <div className="search-box hero-search">
+            <Search size={19} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="What do you need help with?" />
+            <button onClick={onServices}>Search</button>
+          </div>
+          <div className="hero-actions">
+            <button className="primary-btn" onClick={onServices}>Explore services <ArrowRight size={18} /></button>
+            <button className="text-btn" onClick={onOrders}>View my orders</button>
+            <button className="text-btn" onClick={useCurrentLocation}><LocateFixed size={16} /> Current location</button>
+          </div>
+        </div>
+        <div className="hero-art">
+          <img src={img.cleaning} alt="Professional cleaning a home" />
+          <div className="floating-proof"><CheckCircle2 size={20} /><span><b>4.9/5</b><small>Rated by 2,000+ homes</small></span></div>
+        </div>
+      </section>
+      <section className="trust-strip">
+        <span><ShieldCheck /> Verified professionals</span>
+        <span><Clock3 /> Same-day availability</span>
+        <span><WalletCards /> Transparent pricing</span>
+      </section>
+      <section className="content-section">
+        <SectionTitle eyebrow="POPULAR SERVICES" title="What can we help with?" action="View all" onClick={onServices} />
+        <div className="service-grid">
+          {services.slice(0, 6).map((service) => <ServiceCard service={service} onClick={() => onService(service)} key={service.id} />)}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function Services({ services, query, setQuery, onService }) {
+  return (
+    <main className="content-section page-content">
+      <div className="page-heading">
+        <span className="eyebrow">THE HOMEFIX DIRECTORY</span>
+        <h1>Services for every corner of home.</h1>
+        <p>Choose a service and we will match you with a verified professional.</p>
+      </div>
+      <div className="search-box"><Search size={19} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search services" /></div>
+      <div className="service-grid full">
+        {services.map((service) => <ServiceCard service={service} onClick={() => onService(service)} key={service.id} />)}
+      </div>
+      {!services.length && <Empty text="No services match your search." />}
+    </main>
+  );
+}
+
+function Booking({ service, form, update, step, setStep, onBack, onConfirm, submitting }) {
+  if (!service) return <Empty text="Choose a service to begin." />;
+  const subtotal = service.price * Number(form.quantity || 1);
+  const discount = form.coupon.trim().toUpperCase() === "HOMEFIX10" ? Math.round(subtotal * 0.1) : 0;
+  const fee = Math.round(subtotal * 0.05);
+  const total = Math.max(0, subtotal + fee - discount);
+
+  const next = () => {
+    const phoneDigits = form.phone.replace(/\D/g, "");
+    if (step === 1 && (!form.name.trim() || phoneDigits.length !== 10 || !form.address.trim() || !form.city.trim() || !/^\d{6}$/.test(form.pincode))) return;
+    setStep(step + 1);
+  };
+
+  return (
+    <main className="booking-page">
+      <button className="back-link" onClick={onBack}><ArrowLeft size={17} /> Back</button>
+      <div className="progress">
+        {["Service", "Details", "Schedule", "Payment"].map((label, index) => (
+          <span className={index <= step ? "done" : ""} key={label}><i>{index < step ? <Check size={14} /> : index + 1}</i>{label}</span>
+        ))}
+      </div>
+      <div className="booking-layout">
+        <section className="booking-main">
+          {step === 0 && (
+            <>
+              <img className="booking-image" src={service.image} alt={service.name} />
+              <span className="eyebrow">SERVICE DETAILS</span>
+              <h1>{service.name}</h1>
+              <p className="lead">{service.description}. A verified HOMEFIX professional brings the right tools and care to your door.</p>
+              <div className="option-row">
+                <div><b>Quantity</b><small>Rooms, items or units</small></div>
+                <div className="stepper">
+                  <button onClick={() => update("quantity", Math.max(1, form.quantity - 1))}>−</button>
+                  <b>{form.quantity}</b>
+                  <button onClick={() => update("quantity", form.quantity + 1)}>+</button>
+                </div>
+              </div>
+              <label>Notes for your professional
+                <textarea value={form.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Tell your professional what needs attention..." />
+              </label>
+            </>
+          )}
+          {step === 1 && <CustomerDetailsForm form={form} update={update} />}
+          {step === 2 && <ScheduleForm form={form} update={update} />}
+          {step === 3 && <PaymentForm form={form} update={update} total={total} />}
+        </section>
+        <aside className="price-card">
+          <span className="eyebrow">YOUR BOOKING</span>
+          <h3>{service.name}</h3>
+          <div><span>Service price</span><b>{money(subtotal)}</b></div>
+          <div><span>Platform fee</span><b>{money(fee)}</b></div>
+          <div><span>Coupon discount</span><b>-{money(discount)}</b></div>
+          <hr />
+          <div className="total"><span>Total</span><b>{money(total)}</b></div>
+          <button className="primary-btn wide" disabled={submitting} onClick={step === 3 ? onConfirm : next}>
+            {submitting ? "Confirming..." : step === 3 ? "Confirm Booking" : "Continue"}
+            <ArrowRight size={17} />
+          </button>
+        </aside>
+      </div>
+    </main>
+  );
+}
+
+function CustomerDetailsForm({ form, update }) {
+  const fields = [
+    ["name", "Full name", "Your name", "text"],
+    ["phone", "Mobile number", "10-digit mobile", "tel"],
+    ["email", "Email", "you@example.com", "email"],
+    ["address", "Address", "House no., street", "text"],
+    ["landmark", "Landmark", "Nearby landmark", "text"],
+    ["city", "City", "City", "text"],
+    ["pincode", "Pincode", "6-digit pincode", "text"],
+  ];
+  return (
+    <div>
+      <span className="eyebrow">CUSTOMER DETAILS</span>
+      <h1>Where should we come?</h1>
+      <div className="form-grid">
+        {fields.map(([key, label, placeholder, type]) => (
+          <label key={key}>
+            {label}
+            <input
+              type={type}
+              value={form[key]}
+              onChange={(event) => {
+                const raw = event.target.value;
+                const digitsOnly = key === "phone" ? raw.replace(/\D/g, "").slice(0, 10) : key === "pincode" ? raw.replace(/\D/g, "").slice(0, 6) : raw;
+                update(key, digitsOnly);
+              }}
+              placeholder={placeholder}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ScheduleForm({ form, update }) {
+  return (
+    <div>
+      <span className="eyebrow">SCHEDULE</span>
+      <h1>Choose a convenient time.</h1>
+      <p className="lead">Your professional will arrive during the selected two-hour window.</p>
+      <label>Date<input type="date" min={dateToday()} value={form.date} onChange={(event) => update("date", event.target.value)} /></label>
+      <label>Time slot
+        <select value={form.time} onChange={(event) => update("time", event.target.value)}>
+          {TIME_SLOTS.map((slot) => <option key={slot}>{slot}</option>)}
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function PaymentForm({ form, update, total }) {
+  return (
+    <div>
+      <span className="eyebrow">DEMO PAYMENT</span>
+      <h1>Choose how to pay.</h1>
+      <p className="lead">Simulated checkout only. No real money will be charged.</p>
+      <div className="payment-options">
+        {["UPI", "Card", "Wallet", "Cash on Service"].map((method) => (
+          <button className={form.payment === method ? "payment-option selected" : "payment-option"} onClick={() => update("payment", method)} key={method}>
+            {method === "Card" ? <CreditCard /> : method === "UPI" ? <Zap /> : <WalletCards />}
+            <b>{method}</b>
+            <span>{method === "Cash on Service" ? "Pay after work" : "Demo checkout"}</span>
+          </button>
+        ))}
+      </div>
+      <label>Coupon<input value={form.coupon} onChange={(event) => update("coupon", event.target.value)} placeholder="HOMEFIX10" /></label>
+      <div className="payment-total">Amount due <b>{money(total)}</b></div>
+    </div>
+  );
+}
+
+function Confirmation({ booking, onTrack, onOrders, onHome, onCancel, onCall, notify }) {
+  if (!booking) return <Empty text="No booking selected." />;
+  return (
+    <main className="center-page">
+      <div className="confirmation">
+        <div className="success-icon"><Check size={30} /></div>
+        <span className="eyebrow">BOOKING CONFIRMED</span>
+        <h1>Booking Confirmed!</h1>
+        <p>Your HOMEFIX professional will take it from here.</p>
+        <div className="reference-card"><small>BOOKING ID</small><b>{booking.id}</b><span>Professional assignment in progress</span></div>
+        <div className="detail-list">
+          <div><span>Customer</span><b>{booking.customer}</b></div>
+          <div><span>Service</span><b>{booking.service}</b></div>
+          <div><span>Date</span><b>{booking.date}</b></div>
+          <div><span>Time</span><b>{booking.time}</b></div>
+          <div><span>Address</span><b>{booking.address}</b></div>
+          <div><span>Mobile</span><b>{booking.phone}</b></div>
+          <div><span>Payment method</span><b>{booking.payment}</b></div>
+          <div><span>Total amount</span><b>{money(booking.amount)}</b></div>
+          <div><span>Status</span><b>{STATUS_LABELS[normalizeStatus(booking.status)]}</b></div>
+        </div>
+        <div className="hero-actions">
+          <button className="primary-btn" onClick={onTrack}>Track booking <ArrowRight size={17} /></button>
+          <button className="secondary-btn" onClick={onCall}><Phone size={16} /> Call professional</button>
+          <button className="danger-btn" onClick={() => onCancel(booking)}>Cancel booking</button>
+          <button className="secondary-btn" onClick={onOrders}>My orders</button>
+          <button className="text-btn" onClick={() => { window.print(); notify("Print dialog opened."); }}><Printer size={16} /> Print</button>
+          <button className="text-btn" onClick={() => { downloadInvoice(booking); notify("Confirmation downloaded."); }}><Download size={16} /> Download</button>
+          <button className="text-btn" onClick={onHome}>Back home</button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function Orders({ bookings, loading, error, onOpen, onTrack, onCancel, onDownload }) {
+  const [tab, setTab] = useState("All");
+  const groups = {
+    All: bookings,
+    Upcoming: bookings.filter((b) => !["COMPLETED", "CANCELLED"].includes(normalizeStatus(b.status))),
+    Completed: bookings.filter((b) => normalizeStatus(b.status) === "COMPLETED"),
+    Cancelled: bookings.filter((b) => normalizeStatus(b.status) === "CANCELLED"),
+  };
+  const list = groups[tab];
+  return (
+    <main className="content-section page-content">
+      <div className="page-heading"><span className="eyebrow">CUSTOMER SPACE</span><h1>My Orders</h1><p>Your bookings, all in one place.</p></div>
+      <div className="order-tabs">
+        {Object.keys(groups).map((item) => (
+          <button className={tab === item ? "selected" : ""} onClick={() => setTab(item)} key={item}>{item} <small>{groups[item].length}</small></button>
+        ))}
+      </div>
+      {loading && <p>Loading bookings...</p>}
+      {error && <p className="auth-error">{error}</p>}
+      {!loading && list.length > 0 && (
+        <div className="orders-list">
+          {list.map((booking) => (
+            <OrderCard booking={booking} onOpen={onOpen} onTrack={onTrack} onCancel={onCancel} onDownload={onDownload} key={booking.id} />
+          ))}
+        </div>
+      )}
+      {!loading && !list.length && <Empty text="No bookings yet." />}
+    </main>
+  );
+}
+
+function OrderCard({ booking, onOpen, onTrack, onCancel, onDownload }) {
+  const status = normalizeStatus(booking.status);
+  return (
+    <article className="order-card expanded">
+      <span>
+        <b>{booking.service}</b>
+        <small>{booking.id} · {booking.date} · {booking.time}</small>
+        <strong>{money(booking.amount)}</strong>
+      </span>
+      <Badge status={status} />
+      <div className="order-actions">
+        <button onClick={() => onOpen(booking)}>View details</button>
+        <button onClick={() => onTrack(booking)}>Track</button>
+        {status !== "CANCELLED" && status !== "COMPLETED" && <button onClick={() => onCancel(booking)}>Cancel</button>}
+        <button onClick={() => onDownload(booking)}>Invoice</button>
+      </div>
+    </article>
+  );
+}
+
+function OrderDetails({ booking, onBack, onTrack, onDownload }) {
+  if (!booking) return <Empty text="No order selected." />;
+  return (
+    <main className="content-section page-content">
+      <button className="back-link" onClick={onBack}><ArrowLeft size={17} /> My orders</button>
+      <div className="panel order-detail">
+        <span className="eyebrow">BOOKING DETAILS</span>
+        <h1>{booking.service}</h1>
+        <Badge status={normalizeStatus(booking.status)} />
+        <div className="detail-list">
+          <div><span>Booking ID</span><b>{booking.id}</b></div>
+          <div><span>Date and time</span><b>{booking.date} · {booking.time}</b></div>
+          <div><span>Address</span><b>{booking.address}</b></div>
+          <div><span>Total</span><b>{money(booking.amount)}</b></div>
+        </div>
+        <div className="hero-actions">
+          <button className="primary-btn" onClick={onTrack}>Track booking</button>
+          <button className="secondary-btn" onClick={onDownload}>Download invoice</button>
+        </div>
+      </div>
+    </main>
+  );
+}
+
+function Tracking({ booking, employees, onBack, notify, onLiveUpdate }) {
+  useEffect(() => {
+    if (!booking?.customerId) return undefined;
+    return subscribeToMyBookings(booking.customerId, (payload) => {
+      if (payload.new && payload.new.id === booking.id) onLiveUpdate(mapRemoteBooking(payload.new));
+    });
+  }, [booking?.id, booking?.customerId]);
+
+  if (!booking) return <Empty text="No booking to track yet." />;
+  const current = STATUSES.indexOf(normalizeStatus(booking.status));
+  const professional = employees[0];
+  return (
+    <main className="content-section page-content">
+      <button className="back-link" onClick={onBack}><ArrowLeft size={17} /> My orders</button>
+      <div className="tracking-head">
+        <div><span className="eyebrow">LIVE BOOKING</span><h1>{booking.service}</h1><p>{booking.id} · {booking.address}</p></div>
+        <Badge status={normalizeStatus(booking.status)} />
+      </div>
+      <div className="tracking-grid">
+        <section className="panel">
+          <div className="map-placeholder"><MapPin size={28} /><b>Map unavailable</b><small>Live map is optional in demo mode</small></div>
+          <h3>Progress timeline</h3>
+          <div className="timeline">
+            {STATUSES.filter((s) => s !== "CANCELLED").map((label, index) => (
+              <div className={index <= current ? "timeline-item active" : "timeline-item"} key={label}>
+                <i>{index < current ? <Check size={14} /> : index === current ? <span /> : ""}</i>
+                <span><b>{STATUS_LABELS[label]}</b><small>{index <= current ? "Completed" : "Awaiting update"}</small></span>
+              </div>
+            ))}
+          </div>
+        </section>
+        <section className="panel professional">
+          <h3>Your professional</h3>
+          {professional ? (
+            <>
+              <div className="person">
+                <span className="avatar">{professional.avatar}</span>
+                <span><b>{professional.name}</b><small><Star size={14} fill="currentColor" /> {professional.rating.toFixed(1)} · Verified</small></span>
+              </div>
+              <p><Phone size={16} /> {professional.phone}</p>
+              <div className="hero-actions">
+                <button className="secondary-btn" onClick={() => notify(`Calling ${professional.name}...`)}><Phone size={16} /> Call</button>
+                <button className="secondary-btn" onClick={() => notify("Chat opened for demo.")}><MessageCircle size={16} /> Chat</button>
+              </div>
+            </>
+          ) : (
+            <p>Professional location will appear here once tracking starts.</p>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function Profile({ customer, bookings, notify, logout, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(customer?.name || "");
+  const [phone, setPhone] = useState(customer?.phone || "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateOwnProfile(customer.id, { full_name: name, phone });
+      await onSave();
+      setEditing(false);
+      notify("Profile updated.");
+    } catch (error) {
+      notify(error.message || "Unable to update profile.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!customer) return <Empty text="Sign in to view your profile." />;
+  return (
+    <main className="content-section page-content">
+      <div className="profile-hero">
+        <span className="avatar large">{(customer.name || "U").slice(0, 2).toUpperCase()}</span>
+        <div><span className="eyebrow">MY PROFILE</span><h1>{customer.name}</h1><p>{customer.phone} · {customer.email}</p></div>
+        <button className="secondary-btn" onClick={logout}><LogOut size={16} /> Logout</button>
+      </div>
+      <div className="profile-grid">
+        <section className="panel">
+          <h3>Account details</h3>
+          {editing ? (
+            <>
+              <label>Full name<input value={name} onChange={(event) => setName(event.target.value)} /></label>
+              <label>Mobile<input value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, "").slice(0, 10))} /></label>
+              <div className="hero-actions">
+                <button className="primary-btn" disabled={saving} onClick={save}>{saving ? "Saving..." : "Save changes"}</button>
+                <button className="text-btn" onClick={() => setEditing(false)}>Cancel</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="detail-list">
+                <div><span>Name</span><b>{customer.name}</b></div>
+                <div><span>Mobile</span><b>{customer.phone || "Not set"}</b></div>
+                <div><span>Email</span><b>{customer.email}</b></div>
+                <div><span>Role</span><b>{customer.role}</b></div>
+              </div>
+              <button className="secondary-btn" onClick={() => setEditing(true)}><Pencil size={16} /> Edit profile</button>
+            </>
+          )}
+        </section>
+        <section className="panel">
+          <h3>Booking history</h3>
+          {bookings.length ? (
+            <div className="detail-list">
+              {bookings.map((booking) => <div key={booking.id}><span>{booking.service}</span><b>{money(booking.amount)}</b></div>)}
+            </div>
+          ) : <Empty text="No bookings yet." />}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function ProfessionalDashboard({ bookings, setBookings, employee, notify }) {
+  const actions = {
+    CONFIRMED: ["Accept booking", "ASSIGNED"],
+    ASSIGNED: ["Start job", "ON_THE_WAY"],
+    ON_THE_WAY: ["Start service", "SERVICE_STARTED"],
+    SERVICE_STARTED: ["Complete service", "COMPLETED"],
+  };
+  const jobs = bookings.filter((item) => !["COMPLETED", "CANCELLED"].includes(normalizeStatus(item.status)));
+  const advance = (booking, nextStatus) => {
+    setBookings((all) => all.map((item) => (item.id === booking.id ? { ...item, status: nextStatus } : item)));
+    notify(`${booking.id} updated to ${STATUS_LABELS[nextStatus]}.`);
+  };
+  return (
+    <main className="content-section page-content">
+      <div className="dashboard-top">
+        <div><span className="eyebrow">PROFESSIONAL DASHBOARD</span><h1>Good morning, {employee.name.split(" ")[0]}.</h1></div>
+      </div>
+      <div className="stat-grid four">
+        <Stat label="Today's jobs" value={jobs.length} icon={<CalendarDays />} />
+        <Stat label="Pending" value={jobs.length} icon={<Clock3 />} />
+        <Stat label="Completed jobs" value={employee.jobs} icon={<CheckCircle2 />} />
+        <Stat label="Earnings" value={money(employee.earnings)} icon={<WalletCards />} />
+      </div>
+      <h2 className="subheading">Assigned jobs</h2>
+      {jobs.length ? (
+        <div className="job-grid">
+          {jobs.map((booking) => {
+            const action = actions[normalizeStatus(booking.status)];
+            return (
+              <article className="job-card" key={booking.id}>
+                <div className="job-card-head"><b>{booking.id}</b><Badge status={normalizeStatus(booking.status)} /></div>
+                <h3>{booking.service}</h3>
+                <p><MapPin size={15} /> {booking.address}</p>
+                <p><CalendarDays size={15} /> {booking.date} · {booking.time}</p>
+                <div className="job-foot">
+                  <b>{money(booking.amount)}</b>
+                  {action && <button className="primary-btn small" onClick={() => advance(booking, action[1])}>{action[0]} <ArrowRight size={15} /></button>}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : <Empty text="No assigned jobs right now." />}
+    </main>
+  );
+}
+
+function AdminDashboard({ bookings, setBookings, services, employees, notify }) {
+  const revenue = bookings.reduce((sum, item) => sum + item.amount, 0);
+  const changeStatus = (booking, status) => {
+    setBookings((all) => all.map((item) => (item.id === booking.id ? { ...item, status } : item)));
+    notify(`${booking.id} updated to ${STATUS_LABELS[status] || status}.`);
+  };
+  return (
+    <main className="content-section page-content">
+      <div className="dashboard-top"><div><span className="eyebrow">OPERATIONS CENTER</span><h1>Admin dashboard</h1></div></div>
+      <div className="stat-grid four">
+        <Stat label="Total bookings" value={bookings.length} icon={<Package />} />
+        <Stat label="Revenue" value={money(revenue)} icon={<WalletCards />} />
+        <Stat label="Services" value={services.length} icon={<Package />} />
+        <Stat label="Professionals" value={employees.length} icon={<Users />} />
+      </div>
+      <section className="panel table-panel">
+        <div className="panel-title"><h3>Bookings</h3><small>{bookings.length} records</small></div>
+        {bookings.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>Booking</th><th>Service</th><th>Amount</th><th>Status</th></tr></thead>
+              <tbody>
+                {bookings.map((booking) => (
+                  <tr key={booking.id}>
+                    <td><b>{booking.id}</b><small>{booking.date}</small></td>
+                    <td>{booking.service}</td>
+                    <td>{money(booking.amount)}</td>
+                    <td>
+                      <select value={normalizeStatus(booking.status)} onChange={(event) => changeStatus(booking, event.target.value)}>
+                        {STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <Empty text="Bookings will appear here." />}
+      </section>
+    </main>
+  );
+}
+
+function SupportModal({ close, notify }) {
+  return (
+    <div className="modal-backdrop">
+      <div className="modal">
+        <button className="modal-close" onClick={close}><X /></button>
+        <h2>HOMEFIX support</h2>
+        <p className="lead">Our support team is available to help with bookings and payments.</p>
+        <button className="primary-btn wide" onClick={() => { notify("Support chat opened."); close(); }}><MessageCircle size={16} /> Start chat</button>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, icon }) {
+  return <div className="stat"><span className="stat-icon">{icon}</span><small>{label}</small><b>{value}</b></div>;
+}
+
+function Badge({ status }) {
+  return <span className={`status status-${status.toLowerCase()}`}>{STATUS_LABELS[status] || status}</span>;
+}
+
+function Empty({ text }) {
+  return <div className="empty"><Package size={28} /><p>{text}</p></div>;
+}
+
+function downloadInvoice(booking) {
+  if (!booking) return;
+  const body = `HOMEFIX BOOKING RECEIPT\nBooking: ${booking.id}\nService: ${booking.service}\nDate: ${booking.date}\nTime: ${booking.time}\nAddress: ${booking.address}\nAmount: ${money(booking.amount)}`;
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([body], { type: "text/plain" }));
+  link.download = `${booking.id}-invoice.txt`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}

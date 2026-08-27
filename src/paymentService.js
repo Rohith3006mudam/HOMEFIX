@@ -29,5 +29,4 @@ export const createPayment = ({ bookingId, customerId = null, amount, paymentMet
   return payment;
 };
 
-export const retryMockPayment = (payment) => createPayment({ ...payment, paymentMethod: payment.paymentMethod || "Card" });
-export const getPayments = readPayments;
+

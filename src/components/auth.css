@@ -1,0 +1,2 @@
+.modal{max-height:calc(100vh - 40px);overflow-y:auto}
+.auth-error{color:#c0392b}
