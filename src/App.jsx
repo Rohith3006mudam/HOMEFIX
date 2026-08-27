@@ -11,6 +11,7 @@ import { updateOwnProfile } from "./services/auth";
 import { cancelMyBooking, createBooking, listMyBookings, subscribeToMyBookings } from "./services/bookings";
 import { createPayment } from "./paymentService";
 import AuthModal from "./components/AuthModal";
+import RoleRoute from "./components/common/RoleRoute";
 
 // ---------------------------------------------------------------------
 // Static content: service catalogue + demo professionals for the
@@ -398,12 +399,16 @@ function AuthenticatedApp() {
       {page === "profile" && (
         <Profile customer={customer} bookings={bookings} notify={notify} logout={handleLogout} onSave={auth.refreshProfile} />
       )}
-      {page === "professional" && (customer?.role === "professional" ? (
-        <ProfessionalDashboard bookings={bookings} setBookings={setBookings} employee={employees[0]} notify={notify} />
-      ) : <AccessDenied />)}
-      {page === "admin" && (customer?.role === "admin" ? (
-        <AdminDashboard bookings={bookings} setBookings={setBookings} services={services} employees={employees} notify={notify} />
-      ) : <AccessDenied />)}
+      {page === "professional" && (
+        <RoleRoute role={customer?.role} allowedRoles={["professional"]}>
+          <ProfessionalDashboard bookings={bookings} setBookings={setBookings} employee={employees[0]} notify={notify} />
+        </RoleRoute>
+      )}
+      {page === "admin" && (
+        <RoleRoute role={customer?.role} allowedRoles={["admin"]}>
+          <AdminDashboard bookings={bookings} setBookings={setBookings} services={services} employees={employees} notify={notify} />
+        </RoleRoute>
+      )}
 
       {loginOpen && (
         <AuthModal
@@ -442,19 +447,6 @@ function mapRemoteBooking(row) {
 // ---------------------------------------------------------------------
 // Presentational pages
 // ---------------------------------------------------------------------
-
-function AccessDenied() {
-  return (
-    <main className="center-page">
-      <div className="confirmation">
-        <div className="success-icon"><ShieldAlert size={30} /></div>
-        <span className="eyebrow">ACCESS DENIED</span>
-        <h1>You don't have permission to view this page.</h1>
-        <p>This area is restricted to authorized HOMEFIX accounts.</p>
-      </div>
-    </main>
-  );
-}
 
 function SectionTitle({ eyebrow, title, action, onClick }) {
   return (
