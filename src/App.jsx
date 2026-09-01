@@ -52,6 +52,7 @@ const img = {
   washing: "https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&w=900&q=80",
   refrigerator: "https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=900&q=80",
 };
+const serviceVisuals = { plumbing: '🚰', electrical: '🔧', cleaning: '🧹', ac: '❄️', appliance: '🔌', painting: '🎨', carpentry: '🪚', pest: '🪳', bathroom: '🫧', purifier: '💧', washing: '🧺', refrigerator: '🧊' };
 
 const SERVICES = [
   ["plumbing", "Plumbing", "Leaks, taps, pipes and bathroom repairs", 199],
@@ -719,7 +720,7 @@ function SectionTitle({ eyebrow, title, action, onClick }) {
 function ServiceCard({ service, onClick }) {
   return (
     <button className="service-card" onClick={onClick}>
-      <img src={service.image} alt="" onError={(event) => { event.currentTarget.src = img.appliance; }} />
+      <span className="service-visual" aria-hidden="true">{serviceVisuals[service.id] || '🛠️'}</span>
       <span><b>{service.name}</b><small>{service.description}</small><strong>From {money(service.price)}</strong></span>
       <ChevronRight />
     </button>

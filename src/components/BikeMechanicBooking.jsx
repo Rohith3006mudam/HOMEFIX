@@ -66,7 +66,7 @@ export default function BikeMechanicBooking({ onBack, onSuccess, notify }) {
         mobile: form.phone.replace(/\D/g, ""),
         address: form.address,
         bookingDate: form.date,
-        bookingTime: form.time,
+        timeSlot: form.time,
       };
       await createBooking(bookingData);
       notify("Mechanic request submitted! We'll find a technician for you.");
