@@ -1,0 +1,79 @@
+/* Admin / Employee dashboards, AI assistant, notifications (added for the
+   role-specific portals in src/pages/AdminDashboard.jsx and
+   src/pages/EmployeeDashboard.jsx). Kept in a separate file so extra.css
+   (auto-generated/minified) stays untouched. */
+
+.dashboard-header{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:16px;margin-bottom:22px}
+.dashboard-header h1{margin:4px 0}
+.dashboard-header p{color:#52637c;margin:0}
+.error-banner{background:#fdecea;color:#c0392b;border:1px solid #f5c2c0;border-radius:8px;padding:10px 14px;margin-bottom:16px;font:13px Arial}
+.alert-card{display:flex;align-items:center;gap:12px;background:#fff7e6;border:1px solid #ffe1a8;border-radius:10px;padding:14px 16px;margin-bottom:18px;color:#8a5a00}
+.alert-card p{margin:2px 0 0;font:12px Arial;color:#8a5a00}
+.stat-card{background:#fff;border:1px solid #e5eaf1;border-radius:12px;padding:16px;display:flex;gap:12px;align-items:center}
+.stat-card .stat-icon{color:#1463df}
+.stat-card .stat-value{font:bold 22px Arial;color:#10233f}
+.stat-card .stat-label{color:#70809a}
+.stat-grid.three{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.tab-navigation{display:flex;gap:6px;flex-wrap:wrap;margin:20px 0;border-bottom:1px solid #e5eaf1;padding-bottom:10px}
+.tab-navigation button{border:1px solid #d8e1ed;background:#fff;border-radius:8px;padding:9px 13px;color:#52637c;font:bold 12px Arial;cursor:pointer}
+.tab-navigation button.active{background:#1463df;border-color:#1463df;color:#fff}
+.admin-section{margin-bottom:28px}
+.admin-section h2{margin-top:0}
+.cards-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.info-card{background:#f7f9fc;border-radius:10px;padding:16px;border:1px solid #e5eaf1}
+.info-card h3{margin-top:0}
+.table-responsive{overflow-x:auto;border:1px solid #e5eaf1;border-radius:10px}
+.table-responsive table{width:100%;border-collapse:collapse;font:13px Arial}
+.table-responsive th,.table-responsive td{padding:10px 12px;text-align:left;border-bottom:1px solid #edf0f5;white-space:nowrap}
+.table-responsive th{background:#f7f9fc;color:#52637c;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.table-responsive td.actions{display:flex;gap:6px}
+.btn-approve,.btn-reject,.btn-suspend{border:0;border-radius:6px;padding:7px 11px;font:bold 11px Arial;cursor:pointer}
+.btn-approve{background:#e6f6ec;color:#1a7a3c}
+.btn-reject{background:#fdecea;color:#c0392b}
+.btn-suspend{background:#fff1de;color:#a15c00}
+.status-badge{display:inline-block;padding:4px 9px;border-radius:20px;font:bold 10px Arial;text-transform:uppercase;background:#edf4ff;color:#1463df}
+.status-badge.pending{background:#fff1de;color:#a15c00}
+.status-badge.approved,.status-badge.completed,.status-badge.trip_completed{background:#e6f6ec;color:#1a7a3c}
+.status-badge.rejected,.status-badge.cancelled,.status-badge.suspended{background:#fdecea;color:#c0392b}
+.filters-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.filters-row select,.filters-row input{border:1px solid #d8e1ed;border-radius:7px;padding:8px 10px;font:12px Arial}
+.empty-text,.loading-text{color:#70809a;font:13px Arial;padding:14px 0}
+.settings-grid{display:grid;gap:14px;max-width:520px}
+.settings-grid label{display:grid;gap:6px;font:12px Arial;color:#52637c}
+.settings-grid input{border:1px solid #d8e1ed;border-radius:7px;padding:9px 11px}
+
+.employee-dashboard .jobs-list{display:grid;gap:12px}
+.job-card{background:#fff;border:1px solid #e5eaf1;border-radius:12px;padding:16px}
+.job-card.active{border-color:#1463df}
+.job-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px}
+.job-id{color:#70809a}
+.job-details p{display:flex;align-items:center;gap:6px;color:#52637c;font:13px Arial;margin:6px 0}
+.job-footer{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+.job-amount{font:bold 16px Arial;color:#10233f}
+.jobs-list.compact .job-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #edf0f5}
+.status-banner{border-radius:10px;padding:12px 14px;margin-bottom:18px;font:13px Arial}
+.status-banner.pending{background:#fff1de;color:#a15c00}
+.status-banner.rejected,.status-banner.suspended{background:#fdecea;color:#c0392b}
+.dashboard-section{margin-bottom:24px}
+.empty-state{text-align:center;color:#70809a;padding:40px 0}
+
+/* AI assistant floating widget */
+.ai-launcher{position:fixed;right:20px;bottom:20px;z-index:60;border:0;border-radius:999px;background:#1463df;color:#fff;padding:14px 18px;display:flex;align-items:center;gap:8px;font:bold 13px Arial;box-shadow:0 12px 24px #10233f33;cursor:pointer}
+.ai-panel{position:fixed;right:20px;bottom:84px;z-index:60;width:340px;max-width:92vw;max-height:70vh;background:#fff;border-radius:14px;box-shadow:0 20px 40px #10233f33;display:flex;flex-direction:column;overflow:hidden;border:1px solid #e5eaf1}
+.ai-panel-header{background:#10233f;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center}
+.ai-panel-body{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px}
+.ai-msg{max-width:85%;padding:9px 12px;border-radius:10px;font:13px/1.4 Arial}
+.ai-msg.user{align-self:flex-end;background:#1463df;color:#fff}
+.ai-msg.assistant{align-self:flex-start;background:#f0f3f8;color:#28303e}
+.ai-panel-footer{display:flex;gap:8px;padding:10px;border-top:1px solid #edf0f5}
+.ai-panel-footer input{flex:1;border:1px solid #d8e1ed;border-radius:8px;padding:9px 11px}
+.ai-panel-footer button{border:0;background:#1463df;color:#fff;border-radius:8px;padding:0 14px;font:bold 12px Arial}
+
+/* Notification bell */
+.notif-bell{position:relative;background:transparent;border:0;color:#52637c;padding:8px;cursor:pointer}
+.notif-bell .dot{position:absolute;top:5px;right:5px;width:8px;height:8px;border-radius:50%;background:#e0483e}
+.notif-dropdown{position:absolute;right:0;top:44px;width:300px;max-height:360px;overflow-y:auto;background:#fff;border:1px solid #e5eaf1;border-radius:10px;box-shadow:0 16px 32px #10233f26;z-index:70}
+.notif-item{padding:10px 14px;border-bottom:1px solid #edf0f5;font:12px Arial}
+.notif-item b{display:block;color:#10233f}
+.notif-item small{color:#70809a}
+.notif-item.unread{background:#f2f7ff}

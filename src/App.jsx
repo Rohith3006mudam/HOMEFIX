@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import "./extra.css";
+import "./dashboards.css";
 import {
   ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, ChevronRight, Clock3, CreditCard,
   Download, LocateFixed, LogOut, MapPin, Menu, MessageCircle, Package, Pencil, Phone,
@@ -9,18 +10,30 @@ import { isSupabaseConfigured } from "./lib/supabase";
 import { useAuth } from "./hooks/useAuth";
 import { updateOwnProfile } from "./services/auth";
 import { cancelMyBooking, createBooking, listMyBookings, subscribeToMyBookings } from "./services/bookings";
-import { createPayment } from "./paymentService";
+import { createPayment, isPaymentMethodConfigured } from "./paymentService";
 import AuthModal from "./components/AuthModal";
-import RoleRoute from "./components/common/RoleRoute";
+import AdminLogin from "./components/AdminLogin";
+import EmployeeLogin from "./components/EmployeeLogin";
 import LiveTrackingMap from "./components/maps/LiveTrackingMap";
 import { listServices } from "./services/catalog";
 import { subscribeToBookingLocation, writeMyLocation } from "./services/employeeLocation";
 import { useLiveLocation } from "./hooks/useLiveLocation";
+import DriverLogin from "./components/DriverLogin";
+import DriverDashboard from "./pages/DriverDashboard";
+import RideBooking from "./components/RideBooking";
+import RideTracking from "./components/RideTracking";
+import BikeMechanicBooking from "./components/BikeMechanicBooking";
+import CarMechanicBooking from "./components/CarMechanicBooking";
+import { requestRide as createRideRequest } from "./services/rides";
+import AdminDashboardPage from "./pages/AdminDashboard";
+import EmployeeDashboardPage from "./pages/EmployeeDashboard";
+import AIAssistant from "./components/AIAssistant";
+import NotificationBell from "./components/NotificationBell";
+import { createSupportTicket } from "./services/support";
 
 // ---------------------------------------------------------------------
-// Static content: service catalogue + demo professionals for the
-// Professional/Admin dashboards (out of scope for the Supabase booking
-// pipeline, kept as local UI state as before).
+// Static fallback service catalogue used only when the database catalogue
+// has not yet been populated.
 // ---------------------------------------------------------------------
 
 const img = {
@@ -53,18 +66,6 @@ const SERVICES = [
   ["refrigerator", "Refrigerator Repair", "Cooling and compressor service", 349],
 ].map(([id, name, description, price]) => ({ id, name, description, price, image: img[id], active: true }));
 
-const EMPLOYEES = ["Ravi Kumar", "Meera Shah", "Arjun Reddy", "Anjali Menon"].map((name, index) => ({
-  id: `EMP-${1042 + index * 17}`,
-  name,
-  phone: `+91 98${String(7654321 + index * 193).slice(0, 8)}`,
-  skills: index % 2 ? "Cleaning, Painting" : "Plumbing, Electrical",
-  rating: 4.7 + (index % 3) / 10,
-  jobs: 80 + index * 13,
-  earnings: 42000 + index * 2800,
-  available: true,
-  avatar: name.split(" ").map((part) => part[0]).join(""),
-}));
-
 const STATUSES = ["PENDING", "CONFIRMED", "ASSIGNED", "ON_THE_WAY", "SERVICE_STARTED", "COMPLETED", "CANCELLED"];
 const STATUS_LABELS = {
   PENDING: "Pending", CONFIRMED: "Confirmed", ASSIGNED: "Professional Assigned",
@@ -73,10 +74,25 @@ const STATUS_LABELS = {
 const normalizeStatus = (value) => (STATUSES.includes(value) ? value : "PENDING");
 const money = (value) => `₹${Number(value || 0).toLocaleString("en-IN")}`;
 const dateToday = () => new Date().toISOString().slice(0, 10);
-const TIME_SLOTS = ["09:00 AM - 11:00 AM", "12:00 PM - 02:00 PM", "03:00 PM - 05:00 PM", "05:00 PM - 07:00 PM"];
+// Business hours for manually selected booking time (24-hour clock).
+const BUSINESS_HOURS_START = "07:00";
+const BUSINESS_HOURS_END = "21:00";
+const isWithinBusinessHours = (time) => Boolean(time) && time >= BUSINESS_HOURS_START && time <= BUSINESS_HOURS_END;
+const formatTimeDisplay = (time) => {
+  const match = String(time || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return time;
+  let hour = Number(match[1]);
+  const meridiem = hour >= 12 ? "PM" : "AM";
+  hour = hour % 12 || 12;
+  return `${hour}:${match[2]} ${meridiem}`;
+};
 
 const pageFromPath = () => {
   const path = window.location.pathname;
+  if (path === "/login" || path === "/customer/login") return "login";
+  if (path === "/employee/login") return "employee-login";
+  if (path === "/admin/login") return "admin-login";
+  if (path === "/driver/login") return "driver-login";
   if (path === "/services") return "services";
   if (path.startsWith("/service/") || path === "/booking") return "booking";
   if (path === "/confirmation") return "confirmation";
@@ -84,16 +100,43 @@ const pageFromPath = () => {
   if (path.startsWith("/orders/")) return "order-details";
   if (path.startsWith("/track/")) return "tracking";
   if (path === "/profile") return "profile";
-  if (path.startsWith("/employee")) return "professional";
-  if (path.startsWith("/admin")) return "admin";
+  if (path.startsWith("/employee/")) return "professional";
+  if (path.startsWith("/admin/")) return "admin";
+  if (path.startsWith("/driver/dashboard")) return "driver-dashboard";
+  if (path === "/rides/bike") return "ride-booking-bike";
+  if (path === "/rides/auto") return "ride-booking-auto";
+  if (path.startsWith("/ride/")) return "ride-tracking";
+  if (path === "/mechanics/bike") return "bike-mechanic";
+  if (path === "/mechanics/car") return "car-mechanic";
+  if (path === "/access-denied") return "access-denied";
+  if (path === "/support") return "support";
   return "home";
 };
 
+// /admin/<tab> and /employee/<tab> deep-link to the matching dashboard tab.
+const ADMIN_TABS = ["dashboard", "users", "employees", "drivers", "bookings", "rides", "services", "payments", "support", "settings"];
+const EMPLOYEE_TAB_ALIASES = { jobs: "jobs", rides: "history", profile: "profile" };
+
+const adminTabFromPath = () => {
+  const segment = window.location.pathname.split("/")[2];
+  return ADMIN_TABS.includes(segment) ? segment : "dashboard";
+};
+
+const employeeTabFromPath = () => {
+  const segment = window.location.pathname.split("/")[2];
+  return EMPLOYEE_TAB_ALIASES[segment] || "jobs";
+};
+
 const routeFor = (page, activeId) => ({
-  home: "/", services: "/services", booking: "/booking", confirmation: "/confirmation",
+  home: "/", login: "/login", "employee-login": "/employee/login", "admin-login": "/admin/login",
+  "driver-login": "/driver/login", "driver-dashboard": "/driver/dashboard",
+  services: "/services", booking: "/booking", confirmation: "/confirmation",
   orders: "/orders", "order-details": activeId ? `/orders/${activeId}` : "/orders",
   tracking: activeId ? `/track/${activeId}` : "/orders", profile: "/profile",
-  professional: "/employee", admin: "/admin",
+  professional: "/employee/dashboard", admin: "/admin/dashboard", support: "/support", "access-denied": "/access-denied",
+  "ride-booking-bike": "/rides/bike", "ride-booking-auto": "/rides/auto",
+  "ride-tracking": activeId ? `/ride/${activeId}` : "/",
+  "bike-mechanic": "/mechanics/bike", "car-mechanic": "/mechanics/car",
 }[page] || "/");
 
 // ---------------------------------------------------------------------
@@ -133,8 +176,6 @@ function AuthenticatedApp() {
   const [supportOpen, setSupportOpen] = useState(false);
 
   const [services, setServices] = useState(SERVICES);
-  const [employees] = useState(EMPLOYEES);
-
   // Prefer the live Supabase catalogue; silently keep the built-in list if
   // the services table isn't populated/migrated yet (see listServices()).
   useEffect(() => {
@@ -157,7 +198,7 @@ function AuthenticatedApp() {
 
   function createEmptyBookingForm() {
     return {
-      quantity: 1, date: dateToday(), time: TIME_SLOTS[0], name: "", phone: "", email: "",
+      quantity: 1, date: dateToday(), time: "10:00", name: "", phone: "", email: "",
       address: "", landmark: "", city: "", pincode: "", notes: "", coupon: "", payment: "Cash on Service",
     };
   }
@@ -225,6 +266,14 @@ function AuthenticatedApp() {
     else { notify("Please sign in to continue."); setLoginOpen(true); }
   };
 
+  const routeAfterAuthentication = async () => {
+    const profile = await auth.refreshProfile();
+    if (profile?.role === "admin") go("admin");
+    else if (profile?.role === "employee") go("professional");
+    else if (profile?.role === "driver") go("driver-dashboard");
+    else go("home");
+  };
+
   const openService = (service) => {
     setSelectedService(service);
     setBookingStep(0);
@@ -250,7 +299,13 @@ function AuthenticatedApp() {
     }
     if (!bookingForm.date) return notify("Please select a valid booking date.");
     if (!bookingForm.time) return notify("Please select a valid booking time.");
+    if (!isWithinBusinessHours(bookingForm.time)) {
+      return notify(`Please choose a time between ${formatTimeDisplay(BUSINESS_HOURS_START)} and ${formatTimeDisplay(BUSINESS_HOURS_END)}.`);
+    }
     if (!bookingForm.payment) return notify("Please select a payment method.");
+    if (!isPaymentMethodConfigured(bookingForm.payment)) {
+      return notify("Payment configuration required. Choose Cash on Service or contact support.");
+    }
 
     const subtotal = selectedService.price * Number(bookingForm.quantity || 1);
     const discount = bookingForm.coupon.trim().toUpperCase() === "HOMEFIX10" ? Math.round(subtotal * 0.1) : 0;
@@ -267,7 +322,7 @@ function AuthenticatedApp() {
         bookingDate: bookingForm.date,
         timeSlot: bookingForm.time,
       });
-      const payment = createPayment({ bookingId: remote.id, customerId: remote.customer_id, amount, paymentMethod: bookingForm.payment });
+      const payment = await createPayment({ bookingId: remote.id, customerId: remote.customer_id, amount, paymentMethod: bookingForm.payment });
       const booking = {
         ...mapRemoteBooking(remote),
         customer: bookingForm.name,
@@ -276,7 +331,7 @@ function AuthenticatedApp() {
         fee,
         discount,
         payment: bookingForm.payment,
-        paymentStatus: payment.paymentStatus,
+        paymentStatus: payment.status,
       };
       setBookings((all) => [booking, ...all]);
       setActive(booking);
@@ -293,6 +348,22 @@ function AuthenticatedApp() {
       }
     } finally {
       setBookingSubmitting(false);
+    }
+  };
+
+  const requestRide = async (rideType, rideData) => {
+    if (!auth.isAuthenticated) {
+      notify("Please sign in to request a ride.");
+      setLoginOpen(true);
+      return;
+    }
+    try {
+      const ride = await createRideRequest({ rideType, ...rideData });
+      notify("Ride request sent! Finding a driver...");
+      setActive({ id: ride.id });
+      go("ride-tracking", { activeId: ride.id });
+    } catch (error) {
+      notify(error.message || "Unable to request a ride. Please try again.");
     }
   };
 
@@ -319,7 +390,39 @@ function AuthenticatedApp() {
     go("home");
   };
 
-  const navItems = [["home", "Home"], ["services", "Services"], ["orders", "My Orders"], ["profile", "Profile"]];
+  // Role-based navigation items
+  const getNavItems = () => {
+    if (!customer) return [["home", "Home"], ["services", "Services"]];
+
+    switch (customer.role) {
+      case "admin":
+        return [
+          ["admin", "Admin Dashboard"],
+          ["profile", "Profile"],
+        ];
+      case "employee":
+        return [
+          ["professional", "Dashboard"],
+          ["professional", "Jobs & Earnings"],
+          ["profile", "Profile"],
+        ];
+      case "driver":
+        return [
+          ["driver-dashboard", "Driver Dashboard"],
+          ["profile", "Profile"],
+        ];
+      case "customer":
+      default:
+        return [
+          ["home", "Home"],
+          ["services", "Services"],
+          ["orders", "My Bookings"],
+          ["profile", "Profile"],
+        ];
+    }
+  };
+
+  const navItems = getNavItems();
 
   return (
     <div className="app-shell">
@@ -329,18 +432,29 @@ function AuthenticatedApp() {
           <span><b>HOMEFIX</b><small>Trusted home & mobility services</small></span>
         </button>
         <nav className={mobileOpen ? "nav open" : "nav"}>
-          {navItems.map(([target, label]) => (
-            <button key={target} onClick={() => (target === "home" || target === "services" ? go(target) : requireAuth(target))}>
-              {label}
-            </button>
-          ))}
-          {customer?.role === "professional" && <button onClick={() => go("professional")}>Professional</button>}
-          {customer?.role === "admin" && <button onClick={() => go("admin")}>Admin</button>}
+          {navItems.map(([target, label]) => {
+            const requiresAuth = !["home", "services"].includes(target);
+            return (
+              <button key={target} onClick={() => (requiresAuth ? requireAuth(target) : go(target))}>
+                {label}
+              </button>
+            );
+          })}
+          {!customer && (
+            <>
+              <button className="text-btn" onClick={() => setLoginOpen(true)}>Customer Sign In</button>
+              <button className="text-btn" onClick={() => go("employee-login")}>Employee Sign In</button>
+            </>
+          )}
           <button onClick={() => setSupportOpen(true)}>Support</button>
         </nav>
         <div className="header-actions">
           {customer ? (
-            <button className="user-chip" onClick={() => go("profile")}><User size={16} />{customer.name}</button>
+            <>
+              <NotificationBell userId={customer.id} />
+              <button className="user-chip" onClick={() => go("profile")}><User size={16} />{customer.name}</button>
+              <button className="icon-btn" onClick={handleLogout}><LogOut size={16} /></button>
+            </>
           ) : (
             <button className="outline-btn" onClick={() => setLoginOpen(true)}>Sign In</button>
           )}
@@ -349,20 +463,110 @@ function AuthenticatedApp() {
       </header>
 
       {page === "home" && (
-        <Home
-          services={activeServices}
-          query={query}
-          setQuery={setQuery}
-          onService={openService}
-          onServices={() => go("services")}
-          onOrders={() => requireAuth("orders")}
-        />
+        !customer || customer.role === "customer" ? (
+          <Home
+            services={activeServices}
+            query={query}
+            setQuery={setQuery}
+            onService={openService}
+            onServices={() => go("services")}
+            onOrders={() => requireAuth("orders")}
+            onBikeRide={() => requireAuth("ride-booking-bike")}
+            onAutoRide={() => requireAuth("ride-booking-auto")}
+            onBikeMechanic={() => requireAuth("bike-mechanic")}
+            onCarMechanic={() => requireAuth("car-mechanic")}
+          />
+        ) : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole={customer?.role} />
+      )}
+      {page === "login" && (
+        <div className="center-page">
+          <AuthModal
+            close={() => go("home")}
+            onAuthenticated={() => {
+              notify("Signed in successfully.");
+              routeAfterAuthentication().catch((error) => notify(error.message || "Unable to load your account."));
+            }}
+            loginType="customer"
+          />
+        </div>
+      )}
+      {page === "employee-login" && (
+        <div className="center-page">
+          <EmployeeLogin
+            onBack={() => go("home")}
+            onAuthenticated={() => {
+              notify("Signed in successfully.");
+              routeAfterAuthentication().catch((error) => notify(error.message || "Unable to load your account."));
+            }}
+            onSignupClick={() => notify("Create a customer account first, then request professional access from your profile.")}
+          />
+        </div>
+      )}
+      {page === "admin-login" && (
+        <div className="center-page">
+          <AdminLogin
+            onAuthenticated={() => {
+              routeAfterAuthentication().then(() => notify("Signed in successfully.")).catch((error) => notify(error.message || "Unable to load your account."));
+            }}
+          />
+        </div>
+      )}
+      {page === "driver-login" && (
+        <div className="center-page">
+          <DriverLogin
+            onSuccess={() => {
+              notify("Welcome, driver!");
+              routeAfterAuthentication().catch((error) => notify(error.message || "Unable to load your account."));
+            }}
+          />
+        </div>
+      )}
+      {page === "driver-dashboard" && (
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("driver-login")} label="Driver sign in" /> : customer.role === "driver" ? <DriverDashboard /> : (
+          <div className="center-page">
+            <div className="alert alert-error">
+              <p>Please sign in as a driver</p>
+              <button className="btn btn-primary" onClick={() => go("driver-login")}>Driver Login</button>
+            </div>
+          </div>
+        )
+      )}
+      {page === "ride-booking-bike" && (
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <RideBooking
+          rideType="bike"
+          onBack={() => go("home")}
+          onConfirm={(rideData) => requestRide("bike", rideData)}
+        /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole="customer" />
+      )}
+      {page === "ride-booking-auto" && (
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <RideBooking
+          rideType="auto"
+          onBack={() => go("home")}
+          onConfirm={(rideData) => requestRide("auto", rideData)}
+        /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole="customer" />
+      )}
+      {page === "ride-tracking" && (
+        <RideTracking rideId={active?.id || window.location.pathname.split("/")[2]} onBack={() => go("home")} />
+      )}
+      {page === "bike-mechanic" && (
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <BikeMechanicBooking
+          onBack={() => go("home")}
+          onSuccess={() => go("home")}
+          notify={notify}
+        /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole="customer" />
+      )}
+      {page === "car-mechanic" && (
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <CarMechanicBooking
+          onBack={() => go("home")}
+          onSuccess={() => go("home")}
+          notify={notify}
+        /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole="customer" />
       )}
       {page === "services" && (
-        <Services services={activeServices} query={query} setQuery={setQuery} onService={openService} />
+        !customer || customer.role === "customer" ? <Services services={activeServices} query={query} setQuery={setQuery} onService={openService} /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole={customer?.role} />
       )}
       {page === "booking" && (
-        <Booking
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <Booking
           service={selectedService}
           form={bookingForm}
           update={updateForm}
@@ -371,10 +575,10 @@ function AuthenticatedApp() {
           onBack={() => (bookingStep ? setBookingStep(bookingStep - 1) : go("services"))}
           onConfirm={submitBooking}
           submitting={bookingSubmitting}
-        />
+        /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole="customer" />
       )}
       {page === "confirmation" && (
-        <Confirmation
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <Confirmation
           booking={active}
           onTrack={() => go("tracking")}
           onOrders={() => go("orders")}
@@ -382,10 +586,10 @@ function AuthenticatedApp() {
           onCancel={cancelBooking}
           onCall={() => notify("Calling your assigned professional...")}
           notify={notify}
-        />
+        /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole="customer" />
       )}
       {page === "orders" && (
-        <Orders
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <Orders
           bookings={bookings}
           loading={bookingsLoading}
           error={bookingsError}
@@ -393,45 +597,77 @@ function AuthenticatedApp() {
           onTrack={(booking) => { setActive(booking); go("tracking", { activeId: booking.id }); }}
           onCancel={cancelBooking}
           onDownload={downloadInvoice}
-        />
+        /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole="customer" />
       )}
       {page === "order-details" && (
-        <OrderDetails booking={active} onBack={() => go("orders")} onTrack={() => go("tracking", { activeId: active?.id })} onDownload={() => downloadInvoice(active)} />
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <OrderDetails booking={active} onBack={() => go("orders")} onTrack={() => go("tracking", { activeId: active?.id })} onDownload={() => downloadInvoice(active)} /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole="customer" />
       )}
       {page === "tracking" && (
-        <Tracking
+        !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <Tracking
           booking={active}
-          employees={employees}
           onBack={() => go("orders")}
           notify={notify}
           onLiveUpdate={(next) => {
             setActive(next);
             setBookings((all) => all.map((item) => (item.id === next.id ? next : item)));
           }}
-        />
+        /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole="customer" />
       )}
       {page === "profile" && (
         <Profile customer={customer} bookings={bookings} notify={notify} logout={handleLogout} onSave={auth.refreshProfile} />
       )}
       {page === "professional" && (
-        <RoleRoute role={customer?.role} allowedRoles={["professional"]}>
-          <ProfessionalDashboard bookings={bookings} setBookings={setBookings} employee={employees[0]} notify={notify} />
-        </RoleRoute>
+        <>
+          {!auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("employee-login")} label="Employee sign in" /> : customer.role === "employee" ? (
+            <EmployeeDashboardPage
+              profile={auth.profile}
+              initialTab={employeeTabFromPath()}
+              onTabChange={(tab) => {
+                const path = tab === "jobs" ? "/employee/jobs" : tab === "history" ? "/employee/rides" : "/employee/profile";
+                if (window.location.pathname !== path) window.history.pushState({}, "", path);
+              }}
+            />
+          ) : (
+            <AccessDenied onBack={() => go("home")} requiredRole="employee" />
+          )}
+        </>
       )}
       {page === "admin" && (
-        <RoleRoute role={customer?.role} allowedRoles={["admin"]}>
-          <AdminDashboard bookings={bookings} setBookings={setBookings} services={services} employees={employees} notify={notify} />
-        </RoleRoute>
+        <>
+          {!auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("admin-login")} label="Admin sign in" /> : customer.role === "admin" ? (
+            <AdminDashboardPage
+              profile={auth.profile}
+              initialTab={adminTabFromPath()}
+              onTabChange={(tab) => {
+                const path = `/admin/${tab}`;
+                if (window.location.pathname !== path) window.history.pushState({}, "", path);
+              }}
+            />
+          ) : (
+            <AccessDenied onBack={() => go("home")} requiredRole="admin" />
+          )}
+        </>
       )}
+      {page === "access-denied" && (
+        <AccessDenied onBack={() => go("home")} />
+      )}
+
+      {page === "support" && <SupportModal close={() => go("home")} notify={notify} />}
 
       {loginOpen && (
         <AuthModal
           close={() => setLoginOpen(false)}
-          onAuthenticated={() => { setLoginOpen(false); notify("Signed in successfully."); }}
+          onAuthenticated={() => {
+            setLoginOpen(false);
+            notify("Signed in successfully.");
+            routeAfterAuthentication().catch((error) => notify(error.message || "Unable to load your account."));
+          }}
         />
       )}
       {supportOpen && <SupportModal close={() => setSupportOpen(false)} notify={notify} />}
       {toast && <div className="toast"><CheckCircle2 size={17} />{toast}</div>}
+
+      {!["professional", "admin"].includes(page) && <AIAssistant role="customer" profile={auth.profile} />}
 
       <footer className="footer">
         <b>HOMEFIX</b>
@@ -455,6 +691,7 @@ function mapRemoteBooking(row) {
     amount: row.amount || 0,
     status: normalizeStatus(row.status),
     createdAt: row.created_at,
+    professional: row.professional || null,
   };
 }
 
@@ -481,7 +718,7 @@ function ServiceCard({ service, onClick }) {
   );
 }
 
-function Home({ services, query, setQuery, onService, onServices, onOrders }) {
+function Home({ services, query, setQuery, onService, onServices, onOrders, onBikeRide, onAutoRide, onBikeMechanic, onCarMechanic }) {
   const useCurrentLocation = () => {
     if (!navigator.geolocation) return alert("Location is not supported by this browser.");
     navigator.geolocation.getCurrentPosition(
@@ -521,6 +758,36 @@ function Home({ services, query, setQuery, onService, onServices, onOrders }) {
         <SectionTitle eyebrow="POPULAR SERVICES" title="What can we help with?" action="View all" onClick={onServices} />
         <div className="service-grid">
           {services.slice(0, 6).map((service) => <ServiceCard service={service} onClick={() => onService(service)} key={service.id} />)}
+        </div>
+      </section>
+      <section className="content-section">
+        <SectionTitle eyebrow="RIDES & MOBILITY" title="Book a ride" action="See more" onClick={null} />
+        <div className="service-grid">
+          <button className="service-card" onClick={onBikeRide} style={{ cursor: "pointer" }}>
+            <div style={{ textAlign: "center", padding: "2rem", fontSize: "3rem" }}>🏍️</div>
+            <span><b>Bike Ride</b><small>Quick & affordable</small><strong>Starting ₹20</strong></span>
+            <ChevronRight />
+          </button>
+          <button className="service-card" onClick={onAutoRide} style={{ cursor: "pointer" }}>
+            <div style={{ textAlign: "center", padding: "2rem", fontSize: "3rem" }}>🚗</div>
+            <span><b>Auto Ride</b><small>Comfortable travel</small><strong>Starting ₹40</strong></span>
+            <ChevronRight />
+          </button>
+        </div>
+      </section>
+      <section className="content-section">
+        <SectionTitle eyebrow="MECHANIC SERVICES" title="Vehicle repair" action="See all" onClick={null} />
+        <div className="service-grid">
+          <button className="service-card" onClick={onBikeMechanic} style={{ cursor: "pointer" }}>
+            <div style={{ textAlign: "center", padding: "2rem", fontSize: "3rem" }}>🔧</div>
+            <span><b>Bike Mechanic</b><small>Breakdown & repair</small><strong>From ₹200</strong></span>
+            <ChevronRight />
+          </button>
+          <button className="service-card" onClick={onCarMechanic} style={{ cursor: "pointer" }}>
+            <div style={{ textAlign: "center", padding: "2rem", fontSize: "3rem" }}>🛠️</div>
+            <span><b>Car Mechanic</b><small>Expert service</small><strong>From ₹400</strong></span>
+            <ChevronRight />
+          </button>
         </div>
       </section>
     </main>
@@ -644,17 +911,30 @@ function CustomerDetailsForm({ form, update }) {
 }
 
 function ScheduleForm({ form, update }) {
+  const outOfHours = form.time && !isWithinBusinessHours(form.time);
   return (
     <div>
       <span className="eyebrow">SCHEDULE</span>
-      <h1>Choose a convenient time.</h1>
-      <p className="lead">Your professional will arrive during the selected two-hour window.</p>
+      <h1>Choose your exact date and time.</h1>
+      <p className="lead">
+        Pick the exact date and time you want the professional to arrive
+        (business hours: {formatTimeDisplay(BUSINESS_HOURS_START)} - {formatTimeDisplay(BUSINESS_HOURS_END)}).
+      </p>
       <label>Date<input type="date" min={dateToday()} value={form.date} onChange={(event) => update("date", event.target.value)} /></label>
-      <label>Time slot
-        <select value={form.time} onChange={(event) => update("time", event.target.value)}>
-          {TIME_SLOTS.map((slot) => <option key={slot}>{slot}</option>)}
-        </select>
+      <label>Time
+        <input
+          type="time"
+          min={BUSINESS_HOURS_START}
+          max={BUSINESS_HOURS_END}
+          value={form.time}
+          onChange={(event) => update("time", event.target.value)}
+        />
       </label>
+      {outOfHours && (
+        <p className="lead" style={{ color: "#b42318" }}>
+          Please select a time between {formatTimeDisplay(BUSINESS_HOURS_START)} and {formatTimeDisplay(BUSINESS_HOURS_END)}.
+        </p>
+      )}
     </div>
   );
 }
@@ -790,7 +1070,7 @@ function OrderDetails({ booking, onBack, onTrack, onDownload }) {
   );
 }
 
-function Tracking({ booking, employees, onBack, notify, onLiveUpdate }) {
+function Tracking({ booking, onBack, notify, onLiveUpdate }) {
   const [employeeLocation, setEmployeeLocation] = useState(null);
   const [customerLocation, setCustomerLocation] = useState(null);
 
@@ -820,7 +1100,7 @@ function Tracking({ booking, employees, onBack, notify, onLiveUpdate }) {
 
   if (!booking) return <Empty text="No booking to track yet." />;
   const current = STATUSES.indexOf(normalizeStatus(booking.status));
-  const professional = employees[0];
+  const professional = booking.professional;
   return (
     <main className="content-section page-content">
       <button className="back-link" onClick={onBack}><ArrowLeft size={17} /> My orders</button>
@@ -833,7 +1113,7 @@ function Tracking({ booking, employees, onBack, notify, onLiveUpdate }) {
           <LiveTrackingMap
             customerLocation={customerLocation}
             employeeLocation={employeeLocation}
-            employeeName={professional?.name}
+            employeeName={professional?.full_name}
             status={STATUS_LABELS[normalizeStatus(booking.status)]}
             updatedAt={employeeLocation ? Date.now() : null}
           />
@@ -852,13 +1132,12 @@ function Tracking({ booking, employees, onBack, notify, onLiveUpdate }) {
           {professional ? (
             <>
               <div className="person">
-                <span className="avatar">{professional.avatar}</span>
-                <span><b>{professional.name}</b><small><Star size={14} fill="currentColor" /> {professional.rating.toFixed(1)} · Verified</small></span>
+                <span className="avatar">{professional.full_name?.slice(0, 2).toUpperCase() || "P"}</span>
+                <span><b>{professional.full_name}</b><small><Star size={14} fill="currentColor" /> {Number(professional.average_rating || 5).toFixed(1)} · Verified</small></span>
               </div>
-              <p><Phone size={16} /> {professional.phone}</p>
+              {professional.phone && <p><Phone size={16} /> {professional.phone}</p>}
               <div className="hero-actions">
-                <button className="secondary-btn" onClick={() => notify(`Calling ${professional.name}...`)}><Phone size={16} /> Call</button>
-                <button className="secondary-btn" onClick={() => notify("Chat opened for demo.")}><MessageCircle size={16} /> Chat</button>
+                <button className="secondary-btn" onClick={() => notify(`Calling ${professional.full_name}...`)}><Phone size={16} /> Call</button>
               </div>
             </>
           ) : (
@@ -935,141 +1214,76 @@ function Profile({ customer, bookings, notify, logout, onSave }) {
   );
 }
 
-function ProfessionalDashboard({ bookings, setBookings, employee, notify }) {
-  const actions = {
-    CONFIRMED: ["Accept booking", "ASSIGNED"],
-    ASSIGNED: ["Start job", "ON_THE_WAY"],
-    ON_THE_WAY: ["Start service", "SERVICE_STARTED"],
-    SERVICE_STARTED: ["Complete service", "COMPLETED"],
-  };
-  const jobs = bookings.filter((item) => !["COMPLETED", "CANCELLED"].includes(normalizeStatus(item.status)));
-  const activeJob = jobs.find((item) => ["ASSIGNED", "ON_THE_WAY", "SERVICE_STARTED"].includes(normalizeStatus(item.status)));
-  const location = useLiveLocation({ throttleMs: 8000 });
-
-  // Only ever writes to Supabase while the professional has explicitly
-  // opted in (location.isTracking) AND a job is actively in progress.
-  useEffect(() => {
-    if (!location.location || !activeJob) return;
-    writeMyLocation({
-      bookingId: activeJob.id,
-      latitude: location.location.latitude,
-      longitude: location.location.longitude,
-      accuracy: location.location.accuracy,
-      heading: location.location.heading,
-      speed: location.location.speed,
-    }).catch((error) => console.warn("[HOMEFIX] Location share failed:", error.message));
-  }, [location.location, activeJob?.id]);
-
-  // Stop sharing automatically once there is no active job left to track.
-  useEffect(() => {
-    if (!activeJob && location.isTracking) location.stopTracking();
-  }, [activeJob, location.isTracking]);
-
-  const advance = (booking, nextStatus) => {
-    setBookings((all) => all.map((item) => (item.id === booking.id ? { ...item, status: nextStatus } : item)));
-    notify(`${booking.id} updated to ${STATUS_LABELS[nextStatus]}.`);
-  };
+function AccessDenied({ onBack, requiredRole }) {
   return (
-    <main className="content-section page-content">
-      <div className="dashboard-top">
-        <div><span className="eyebrow">PROFESSIONAL DASHBOARD</span><h1>Good morning, {employee.name.split(" ")[0]}.</h1></div>
-      </div>
-      {activeJob && (
-        <section className="panel location-share">
-          <div>
-            <b>Share live location</b>
-            <p>Lets the customer see your position on the map while job {activeJob.id} is active. You can turn this off anytime.</p>
-            {location.error && <small className="error-text">{location.error}</small>}
-          </div>
-          <button
-            className={location.isTracking ? "primary-btn small" : "secondary-btn small"}
-            onClick={() => (location.isTracking ? location.stopTracking() : location.startTracking())}
-          >
-            {location.isTracking ? "Sharing · Tap to stop" : "Enable location sharing"}
-          </button>
-        </section>
-      )}
-      <div className="stat-grid four">
-        <Stat label="Today's jobs" value={jobs.length} icon={<CalendarDays />} />
-        <Stat label="Pending" value={jobs.length} icon={<Clock3 />} />
-        <Stat label="Completed jobs" value={employee.jobs} icon={<CheckCircle2 />} />
-        <Stat label="Earnings" value={money(employee.earnings)} icon={<WalletCards />} />
-      </div>
-      <h2 className="subheading">Assigned jobs</h2>
-      {jobs.length ? (
-        <div className="job-grid">
-          {jobs.map((booking) => {
-            const action = actions[normalizeStatus(booking.status)];
-            return (
-              <article className="job-card" key={booking.id}>
-                <div className="job-card-head"><b>{booking.id}</b><Badge status={normalizeStatus(booking.status)} /></div>
-                <h3>{booking.service}</h3>
-                <p><MapPin size={15} /> {booking.address}</p>
-                <p><CalendarDays size={15} /> {booking.date} · {booking.time}</p>
-                <div className="job-foot">
-                  <b>{money(booking.amount)}</b>
-                  {action && <button className="primary-btn small" onClick={() => advance(booking, action[1])}>{action[0]} <ArrowRight size={15} /></button>}
-                </div>
-              </article>
-            );
-          })}
+    <main className="center-page">
+      <div className="confirmation">
+        <div className="success-icon"><ShieldAlert size={30} /></div>
+        <span className="eyebrow">ACCESS DENIED</span>
+        <h1>Unauthorized Access</h1>
+        <p>
+          {requiredRole
+            ? `You need to be logged in as a ${requiredRole} to access this page.`
+            : "You don't have permission to access this page."}
+        </p>
+        <div className="hero-actions">
+          <button className="primary-btn" onClick={onBack}>Go back to home</button>
         </div>
-      ) : <Empty text="No assigned jobs right now." />}
+      </div>
     </main>
   );
 }
 
-function AdminDashboard({ bookings, setBookings, services, employees, notify }) {
-  const revenue = bookings.reduce((sum, item) => sum + item.amount, 0);
-  const changeStatus = (booking, status) => {
-    setBookings((all) => all.map((item) => (item.id === booking.id ? { ...item, status } : item)));
-    notify(`${booking.id} updated to ${STATUS_LABELS[status] || status}.`);
-  };
+function LoginRequired({ onLogin, label = "Customer sign in" }) {
   return (
-    <main className="content-section page-content">
-      <div className="dashboard-top"><div><span className="eyebrow">OPERATIONS CENTER</span><h1>Admin dashboard</h1></div></div>
-      <div className="stat-grid four">
-        <Stat label="Total bookings" value={bookings.length} icon={<Package />} />
-        <Stat label="Revenue" value={money(revenue)} icon={<WalletCards />} />
-        <Stat label="Services" value={services.length} icon={<Package />} />
-        <Stat label="Professionals" value={employees.length} icon={<Users />} />
+    <main className="center-page">
+      <div className="confirmation">
+        <div className="success-icon"><ShieldAlert size={30} /></div>
+        <span className="eyebrow">SIGN IN REQUIRED</span>
+        <h1>Sign in to continue</h1>
+        <p>This customer feature requires a HOMEFIX account.</p>
+        <button className="primary-btn" onClick={onLogin}>{label}</button>
       </div>
-      <section className="panel table-panel">
-        <div className="panel-title"><h3>Bookings</h3><small>{bookings.length} records</small></div>
-        {bookings.length ? (
-          <div className="table-wrap">
-            <table>
-              <thead><tr><th>Booking</th><th>Service</th><th>Amount</th><th>Status</th></tr></thead>
-              <tbody>
-                {bookings.map((booking) => (
-                  <tr key={booking.id}>
-                    <td><b>{booking.id}</b><small>{booking.date}</small></td>
-                    <td>{booking.service}</td>
-                    <td>{money(booking.amount)}</td>
-                    <td>
-                      <select value={normalizeStatus(booking.status)} onChange={(event) => changeStatus(booking, event.target.value)}>
-                        {STATUSES.map((status) => <option key={status} value={status}>{STATUS_LABELS[status]}</option>)}
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : <Empty text="Bookings will appear here." />}
-      </section>
     </main>
   );
 }
 
 function SupportModal({ close, notify }) {
+  const [message, setMessage] = useState("");
+  const [category, setCategory] = useState("other");
+  const [sending, setSending] = useState(false);
+
+  const submit = async () => {
+    if (!message.trim()) return notify("Please describe your issue.");
+    setSending(true);
+    try {
+      await createSupportTicket({ category, message: message.trim() });
+      notify("Support ticket submitted. Our team will get back to you.");
+      close();
+    } catch (error) {
+      notify(error.message || "Unable to submit support ticket.");
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <div className="modal-backdrop">
       <div className="modal">
         <button className="modal-close" onClick={close}><X /></button>
         <h2>HOMEFIX support</h2>
         <p className="lead">Our support team is available to help with bookings and payments.</p>
-        <button className="primary-btn wide" onClick={() => { notify("Support chat opened."); close(); }}><MessageCircle size={16} /> Start chat</button>
+        <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ marginBottom: 10, width: "100%" }}>
+          {["booking", "payment", "account", "other"].map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <textarea
+          rows={4}
+          style={{ width: "100%", marginBottom: 12 }}
+          placeholder="Describe your issue..."
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+        />
+        <button className="primary-btn wide" disabled={sending} onClick={submit}><MessageCircle size={16} /> {sending ? "Submitting..." : "Submit ticket"}</button>
       </div>
     </div>
   );

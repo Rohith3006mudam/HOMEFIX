@@ -19,7 +19,8 @@ create table if not exists public.profiles (
   full_name text,
   phone text,
   email text,
-  role text not null default 'customer' check (role in ('customer', 'professional', 'admin')),
+  role text not null default 'customer' check (role in ('customer', 'employee', 'driver', 'admin')),
+  approval_status text not null default 'approved' check (approval_status in ('pending', 'approved', 'rejected', 'suspended')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

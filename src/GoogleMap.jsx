@@ -1,6 +1,26 @@
 import React, { useEffect, useRef, useState } from 'react';
 
 const DEFAULT_CENTER = { lat: 17.385, lng: 78.4867 };
+const MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+let mapsLoadPromise;
+
+function loadGoogleMaps() {
+  if (window.google?.maps) return Promise.resolve();
+  if (!MAPS_API_KEY) {
+    return Promise.reject(new Error('Add VITE_GOOGLE_MAPS_API_KEY to .env and reload.'));
+  }
+  if (mapsLoadPromise) return mapsLoadPromise;
+
+  mapsLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(MAPS_API_KEY)}&v=weekly&loading=async`;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Google Maps could not be loaded. Check VITE_GOOGLE_MAPS_API_KEY.'));
+    document.head.appendChild(script);
+  });
+  return mapsLoadPromise;
+}
 
 export default function GoogleMap({
   center,
@@ -20,7 +40,7 @@ export default function GoogleMap({
     let cancelled = false;
     const init = async () => {
       try {
-        if (!window.google?.maps) throw new Error('Google Maps is not loaded. Add VITE_GOOGLE_MAPS_API_KEY to .env and reload.');
+        await loadGoogleMaps();
         const { Map } = await window.google.maps.importLibrary('maps');
         if (cancelled || !ref.current) return;
         mapRef.current = new Map(ref.current, {

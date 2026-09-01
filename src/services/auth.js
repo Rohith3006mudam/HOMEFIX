@@ -64,7 +64,13 @@ export async function sendPhoneOtp(phone) {
     throw new Error("Please wait before requesting another OTP.");
   }
   const { error } = await client.auth.signInWithOtp({ phone: normalizedPhone });
-  if (error) throw error;
+  if (error) {
+    const message = error.message || "Unable to send OTP.";
+    if (/unsupported phone provider|phone provider/i.test(message)) {
+      throw new Error("Mobile OTP is not configured. Use email and password, or ask an administrator to enable a Supabase phone provider.");
+    }
+    throw error;
+  }
   lastOtpSentAt = now;
   return normalizedPhone;
 }
@@ -75,7 +81,13 @@ export async function verifyPhoneOtp(phone, token) {
   if (!normalizedPhone) throw new Error("Enter a valid 10-digit Indian mobile number.");
   if (!/^\d{6}$/.test(token)) throw new Error("Enter the 6-digit OTP.");
   const { data, error } = await client.auth.verifyOtp({ phone: normalizedPhone, token, type: "sms" });
-  if (error) throw error;
+  if (error) {
+    const message = error.message || "Invalid or expired OTP.";
+    if (/unsupported phone provider|phone provider/i.test(message)) {
+      throw new Error("Mobile OTP is not configured. Use email and password, or ask an administrator to enable a Supabase phone provider.");
+    }
+    throw error;
+  }
   if (!data.session) throw new Error("Invalid or expired OTP.");
   return data;
 }
@@ -138,4 +150,93 @@ export async function signOut() {
   if (!supabase) return;
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+}
+
+// ---- Employee signup / access request ----------------------------------------
+
+// Customers can request to become employees (creates profile with pending approval)
+export async function requestEmployeeAccess({ fullName, phone, services, experience, serviceArea }) {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .rpc("request_employee_access", {
+      requested_full_name: fullName || null,
+      requested_phone: phone ? normalizeIndianPhone(phone) : null,
+      requested_services: services || [],
+      requested_experience: experience || 0,
+      requested_service_area: serviceArea || null,
+    })
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function requestDriverAccess({ vehicleType, vehicleNumber }) {
+  const client = requireSupabase();
+  if (!['bike', 'auto'].includes(vehicleType)) throw new Error("Choose Bike or Auto.");
+  if (!vehicleNumber.trim()) throw new Error("Enter your vehicle number.");
+  const { data, error } = await client
+    .rpc("request_driver_access", {
+      requested_vehicle_type: vehicleType,
+      requested_vehicle_number: vehicleNumber.trim(),
+    })
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Fetch current user's actual role from database (not frontend/localStorage)
+export async function getActualUserRole() {
+  const client = requireSupabase();
+  const { data: authData, error: authError } = await client.auth.getUser();
+  if (authError) throw authError;
+  if (!authData.user) return null;
+
+  const { data, error } = await client
+    .from("profiles")
+    .select("role, approval_status")
+    .eq("id", authData.user.id)
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Admin only: get list of pending employee applications
+export async function getPendingEmployees() {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from("profiles")
+    .select("*")
+    .eq("role", "employee")
+    .eq("approval_status", "pending")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
+// Admin only: approve an employee
+export async function approveEmployee(employeeId) {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from("profiles")
+    .update({ approval_status: "approved", updated_at: new Date().toISOString() })
+    .eq("id", employeeId)
+    .eq("role", "employee")
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+// Admin only: reject an employee
+export async function rejectEmployee(employeeId) {
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from("profiles")
+    .update({ approval_status: "rejected", updated_at: new Date().toISOString() })
+    .eq("id", employeeId)
+    .eq("role", "employee")
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data;
 }

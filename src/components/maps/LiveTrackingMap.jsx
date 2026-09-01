@@ -36,9 +36,9 @@ export default function LiveTrackingMap({ customerLocation, employeeLocation, em
     <div className="live-tracking-map">
       <GoogleMap
         center={employeeLocation || customerLocation}
-        pickup={employeeLocation ? { lat: employeeLocation.latitude, lng: employeeLocation.longitude } : undefined}
-        destination={customerLocation ? { lat: customerLocation.latitude, lng: customerLocation.longitude } : undefined}
-        driver={employeeLocation ? { lat: employeeLocation.latitude, lng: employeeLocation.longitude } : undefined}
+        pickup={employeeLocation ? { lat: employeeLocation.latitude ?? employeeLocation.lat, lng: employeeLocation.longitude ?? employeeLocation.lng } : undefined}
+        destination={customerLocation ? { lat: customerLocation.latitude ?? customerLocation.lat, lng: customerLocation.longitude ?? customerLocation.lng } : undefined}
+        driver={employeeLocation ? { lat: employeeLocation.latitude ?? employeeLocation.lat, lng: employeeLocation.longitude ?? employeeLocation.lng } : undefined}
       />
       <div className="tracking-meta">
         {employeeName && <span><b>{employeeName}</b> {status ? `· ${status}` : ""}</span>}
