@@ -52,22 +52,32 @@ const img = {
   washing: "https://images.unsplash.com/photo-1626806787461-102c1bfaaea1?auto=format&fit=crop&w=900&q=80",
   refrigerator: "https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=900&q=80",
 };
-const serviceVisuals = { plumbing: '🚰', electrical: '🔧', cleaning: '🧹', ac: '❄️', appliance: '🔌', painting: '🎨', carpentry: '🪚', pest: '🪳', bathroom: '🫧', purifier: '💧', washing: '🧺', refrigerator: '🧊' };
+const serviceVisuals = {
+  electrician: { icon: '🔧', color: '#2563eb', tint: '#eff6ff' }, plumber: { icon: '🚰', color: '#06b6d4', tint: '#ecfeff' }, carpenter: { icon: '🪚', color: '#f97316', tint: '#fff7ed' }, painter: { icon: '🎨', color: '#8b5cf6', tint: '#f5f3ff' }, ac: { icon: '❄️', color: '#06b6d4', tint: '#ecfeff' }, cleaning: { icon: '🧹', color: '#10b981', tint: '#ecfdf5' }, pest: { icon: '🪳', color: '#65a30d', tint: '#f7fee7' }, appliance: { icon: '🔌', color: '#8b5cf6', tint: '#f5f3ff' }, car: { icon: '🚗', color: '#f97316', tint: '#fff7ed' }, bike: { icon: '🏍️', color: '#2563eb', tint: '#eff6ff' }, mechanic: { icon: '🛠️', color: '#c2410c', tint: '#fff7ed' }, salon: { icon: '💇', color: '#ec4899', tint: '#fdf2f8' }, moving: { icon: '📦', color: '#ea580c', tint: '#fff7ed' }, delivery: { icon: '🚚', color: '#16a34a', tint: '#f0fdf4' }, gardening: { icon: '🪴', color: '#16a34a', tint: '#f0fdf4' }, maintenance: { icon: '🏠', color: '#2563eb', tint: '#eff6ff' }, bathroom: { icon: '🫧', color: '#06b6d4', tint: '#ecfeff' }, purifier: { icon: '💧', color: '#06b6d4', tint: '#ecfeff' }, washing: { icon: '🧺', color: '#10b981', tint: '#ecfdf5' }, refrigerator: { icon: '🧊', color: '#2563eb', tint: '#eff6ff' },
+};
 
 const SERVICES = [
-  ["plumbing", "Plumbing", "Leaks, taps, pipes and bathroom repairs", 199],
-  ["electrical", "Electrical", "Switches, wiring, fans and safe repairs", 249],
+  ["electrician", "Electrician", "Repairs, wiring, switches & installations", 249],
+  ["plumber", "Plumber", "Leaks, taps, pipes & bathroom repairs", 199],
+  ["carpenter", "Carpenter", "Furniture repair, fitting & woodwork", 299],
+  ["painter", "Painter", "Fresh finishes for every room", 599],
+  ["ac", "AC Service", "Service, repair & installation", 349],
   ["cleaning", "Home Cleaning", "Deep cleaning for a fresher home", 399],
-  ["ac", "AC Repair", "Cooling service, gas refill and repair", 349],
-  ["appliance", "Appliance Repair", "Reliable repairs for everyday appliances", 299],
-  ["painting", "Painting", "Beautiful finishes for every room", 599],
-  ["carpentry", "Carpentry", "Furniture assembly and woodwork", 299],
   ["pest", "Pest Control", "Targeted protection for your home", 499],
+  ["appliance", "Appliance Repair", "Reliable repairs for everyday appliances", 299],
+  ["car", "Car Service", "Reliable care for everyday driving", 499],
+  ["bike", "Bike Service", "Quick care for two-wheelers", 299],
+  ["mechanic", "Mechanic", "On-road repair and servicing", 399],
+  ["salon", "Home Salon", "At-home personal care", 499],
+  ["moving", "Moving & Packing", "Pack, move and settle with ease", 799],
+  ["delivery", "Delivery", "Reliable local pickup and drop", 149],
+  ["gardening", "Gardening", "Care for your green spaces", 249],
+  ["maintenance", "Home Maintenance", "Everyday repairs in one visit", 299],
   ["bathroom", "Bathroom Cleaning", "Hygienic bathroom deep cleaning", 299],
   ["purifier", "Water Purifier", "Filter replacement and servicing", 249],
   ["washing", "Washing Machine Repair", "Fast diagnosis and expert repair", 299],
   ["refrigerator", "Refrigerator Repair", "Cooling and compressor service", 349],
-].map(([id, name, description, price]) => ({ id, name, description, price, image: img[id], active: true }));
+].map(([id, name, description, price]) => ({ id, name, description, price, image: img[id] || img.appliance, active: true }));
 
 const STATUSES = ["PENDING", "CONFIRMED", "ASSIGNED", "ON_THE_WAY", "SERVICE_STARTED", "COMPLETED", "CANCELLED"];
 const STATUS_LABELS = {
@@ -718,10 +728,11 @@ function SectionTitle({ eyebrow, title, action, onClick }) {
 }
 
 function ServiceCard({ service, onClick }) {
+  const visual = serviceVisuals[service.id] || { icon: '🛠️', color: '#2563eb', tint: '#eff6ff' };
   return (
     <button className="service-card" onClick={onClick}>
-      <span className="service-visual" aria-hidden="true">{serviceVisuals[service.id] || '🛠️'}</span>
-      <span><b>{service.name}</b><small>{service.description}</small><strong>From {money(service.price)}</strong></span>
+      <span className="service-visual" style={{ '--accent': visual.color, '--tint': visual.tint }} aria-hidden="true">{visual.icon}</span>
+      <span><b>{service.name}</b><small>{service.description}</small><strong>From {money(service.price)}</strong><em>View service <ArrowRight size={14} /></em></span>
       <ChevronRight />
     </button>
   );
@@ -740,8 +751,8 @@ function Home({ services, query, setQuery, onService, onServices, onOrders, onBi
       <section className="hero premium-hero">
         <div className="hero-copy hero-reveal">
           <span className="eyebrow"><ShieldCheck size={16} /> TRUSTED HOME &amp; MOBILITY SERVICES</span>
-          <h1><span>Book a professional.</span><br /><em>Fix your home.</em></h1>
-          <p>From everyday repairs and cleaning to appliance care, trusted help arrives at your doorstep.</p>
+          <h1><span>Everything your home needs.</span><br /><em>Everything your journey needs.</em></h1>
+          <p>Book trusted professionals, get reliable rides and manage your everyday needs - all from one HOMEFIX.</p>
           <div className="search-box hero-search">
             <Search size={19} />
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="What do you need help with?" />
@@ -749,13 +760,13 @@ function Home({ services, query, setQuery, onService, onServices, onOrders, onBi
           </div>
           <div className="hero-actions">
             <button className="primary-btn" onClick={onServices}>Book a service <ArrowRight size={18} /></button>
-            <button className="secondary-btn hero-secondary" onClick={onServices}>Explore services</button>
-            <button className="text-btn" onClick={useCurrentLocation}><LocateFixed size={16} /> Current location</button>
+            <button className="secondary-btn hero-secondary" onClick={onBikeRide}>Book a ride <MapPin size={17} /></button>
+            <button className="text-btn" onClick={useCurrentLocation}><LocateFixed size={16} /> Use current location</button>
           </div>
         </div>
         <div className="hero-art hero-art-reveal">
-          <img src={img.cleaning} alt="Professional cleaning a home" />
-          <div className="floating-proof"><CheckCircle2 size={20} /><span><b>Verified providers</b><small>For your home and ride</small></span></div>
+          <div className="hero-orbit" aria-hidden="true"><span>🔧</span><span>🚰</span><span>❄️</span><span>🧹</span><span>🏍️</span><span>🚗</span><span>📦</span><div className="hero-home">🏠<b>HOMEFIX</b><small>At your service</small></div></div>
+          <div className="floating-proof"><CheckCircle2 size={20} /><span><b>Verified providers</b><small>For home and mobility</small></span></div>
         </div>
       </section>
       <section className="trust-strip">
@@ -769,8 +780,12 @@ function Home({ services, query, setQuery, onService, onServices, onOrders, onBi
           {services.slice(0, 6).map((service) => <ServiceCard service={service} onClick={() => onService(service)} key={service.id} />)}
         </div>
       </section>
+      <section className="content-section reveal-section ai-showcase">
+        <div className="ai-orb" aria-hidden="true"><span>✦</span><span>◌</span><span>✦</span></div>
+        <div><span className="eyebrow">HOMEFIX AI</span><h2>Not sure what service you need?</h2><p>Describe the issue in your own words and HOMEFIX AI can help identify the right service and next step.</p><button className="primary-btn" onClick={() => document.querySelector('.ai-launcher')?.click()}>Ask HOMEFIX AI <MessageCircle size={17} /></button></div>
+      </section>
       <section className="content-section reveal-section">
-        <SectionTitle eyebrow="RIDES & MOBILITY" title="Book a ride" action="See more" onClick={null} />
+        <SectionTitle eyebrow="RIDES & MOBILITY" title="Need to get somewhere?" action="Book a ride" onClick={onBikeRide} />
         <div className="service-grid">
           <button className="service-card" onClick={onBikeRide} style={{ cursor: "pointer" }}>
             <div style={{ textAlign: "center", padding: "2rem", fontSize: "3rem" }}>🏍️</div>
@@ -819,6 +834,12 @@ function Home({ services, query, setQuery, onService, onServices, onOrders, onBi
             ["03", "Confirm your booking", "Review your service and choose a payment method."],
             ["04", "Track your professional", "Follow progress once a verified provider is assigned."],
           ].map(([number, title, description]) => <article className="step-card" key={number}><span>{number}</span><h3>{title}</h3><p>{description}</p></article>)}
+        </div>
+      </section>
+      <section className="content-section reveal-section trust-grid-section">
+        <SectionTitle eyebrow="WHY HOMEFIX" title="Built around trust, clarity and care." />
+        <div className="trust-card-grid">
+          {[[ShieldCheck, 'Verified professionals', 'Clear status when a provider is verified.'], [WalletCards, 'Transparent booking', 'Review service details before you confirm.'], [MapPin, 'Live tracking', 'Private progress tracking for active bookings.'], [MessageCircle, 'Customer support', 'Help and safety reporting when you need it.']].map(([Icon, title, text]) => <article key={title}><Icon size={22} /><h3>{title}</h3><p>{text}</p></article>)}
         </div>
       </section>
       <section className="home-cta reveal-section">
