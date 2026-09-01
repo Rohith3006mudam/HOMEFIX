@@ -1,0 +1,12 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /customer/
+Disallow: /employee/
+Disallow: /driver/
+Disallow: /booking
+Disallow: /orders/
+Disallow: /track/
+Disallow: /ride/
+
+Sitemap: https://YOUR-DOMAIN.com/sitemap.xml

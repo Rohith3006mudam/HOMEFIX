@@ -107,6 +107,7 @@ const pageFromPath = () => {
   if (path === "/admin/login") return "admin-login";
   if (path === "/driver/login") return "driver-login";
   if (path === "/services") return "services";
+  if (path.startsWith("/services/")) return "service-detail";
   if (path === "/about" || path === "/help") return "home";
   if (path.startsWith("/service/") || path === "/booking") return "booking";
   if (path === "/confirmation") return "confirmation";
@@ -157,6 +158,29 @@ const routeFor = (page, activeId) => ({
   "ride-tracking": activeId ? `/ride/${activeId}` : "/",
   "bike-mechanic": "/mechanics/bike", "car-mechanic": "/mechanics/car",
 }[page] || "/");
+
+const serviceSlug = (service) => service.name.toLowerCase().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+
+function usePublicMetadata({ title, description, path = "/", service }) {
+  useEffect(() => {
+    const siteUrl = (import.meta.env.VITE_PUBLIC_SITE_URL || window.location.origin).replace(/\/$/, "");
+    const canonical = `${siteUrl}${path}`;
+    document.title = title;
+    const setMeta = (name, content, property = false) => {
+      const selector = property ? `meta[property="${name}"]` : `meta[name="${name}"]`;
+      let element = document.head.querySelector(selector);
+      if (!element) { element = document.createElement("meta"); element.setAttribute(property ? "property" : "name", name); document.head.appendChild(element); }
+      element.setAttribute("content", content);
+    };
+    setMeta("description", description); setMeta("og:title", title, true); setMeta("og:description", description, true); setMeta("og:url", canonical, true); setMeta("twitter:card", "summary");
+    let link = document.head.querySelector('link[rel="canonical"]');
+    if (!link) { link = document.createElement("link"); link.setAttribute("rel", "canonical"); document.head.appendChild(link); }
+    link.setAttribute("href", canonical);
+    let structured = document.head.querySelector("#homefix-structured-data");
+    if (!structured) { structured = document.createElement("script"); structured.id = "homefix-structured-data"; structured.type = "application/ld+json"; document.head.appendChild(structured); }
+    structured.textContent = JSON.stringify(service ? { "@context": "https://schema.org", "@type": "Service", name: service.name, description: service.description, provider: { "@type": "Organization", name: "HOMEFIX", url: siteUrl } } : { "@context": "https://schema.org", "@type": "Organization", name: "HOMEFIX", url: siteUrl });
+  }, [title, description, path, service]);
+}
 
 // ---------------------------------------------------------------------
 // Top-level app: gates on Supabase configuration, then wires the single
@@ -584,6 +608,7 @@ function AuthenticatedApp() {
       {page === "services" && (
         !customer || customer.role === "customer" ? <Services services={activeServices} query={query} setQuery={setQuery} onService={openService} /> : <AccessDenied onBack={() => routeAfterAuthentication()} requiredRole={customer?.role} />
       )}
+      {page === "service-detail" && <ServiceDetail services={services} onService={openService} onBack={() => go("services")} />}
       {page === "booking" && (
         !auth.isAuthenticated || !customer ? <LoginRequired onLogin={() => go("login")} /> : customer.role === "customer" ? <Booking
           service={selectedService}
@@ -739,6 +764,7 @@ function ServiceCard({ service, onClick }) {
 }
 
 function Home({ services, query, setQuery, onService, onServices, onOrders, onBikeRide, onAutoRide, onBikeMechanic, onCarMechanic }) {
+  usePublicMetadata({ title: "HOMEFIX | Trusted Home & Mobility Services", description: "HOMEFIX connects customers with trusted professionals for home repairs, cleaning, appliance service, maintenance, delivery and mobility services." });
   const useCurrentLocation = () => {
     if (!navigator.geolocation) return alert("Location is not supported by this browser.");
     navigator.geolocation.getCurrentPosition(
@@ -858,6 +884,7 @@ function PublicMapPreview() {
 }
 
 function Services({ services, query, setQuery, onService }) {
+  usePublicMetadata({ title: "HOMEFIX Services | Home Repair, Cleaning & Mobility", description: "Explore HOMEFIX home services, appliance repair, cleaning, maintenance and mobility options.", path: "/services" });
   return (
     <main className="content-section page-content">
       <div className="page-heading">
@@ -872,6 +899,15 @@ function Services({ services, query, setQuery, onService }) {
       {!services.length && <Empty text="No services match your search." />}
     </main>
   );
+}
+
+function ServiceDetail({ services, onService, onBack }) {
+  const slug = window.location.pathname.split("/").filter(Boolean).pop();
+  const service = services.find((item) => serviceSlug(item) === slug);
+  usePublicMetadata({ title: service ? `${service.name} | HOMEFIX Services` : "Service | HOMEFIX", description: service?.description || "Find trusted HOMEFIX services for your everyday needs.", path: `/services/${slug}`, service });
+  if (!service) return <main className="content-section page-content"><Empty text="This service is not available right now." /><button className="primary-btn" onClick={onBack}>Explore services</button></main>;
+  const visual = serviceVisuals[service.id] || { icon: "🛠️", color: "#2563eb", tint: "#eff6ff" };
+  return <main className="content-section page-content service-detail-page"><button className="back-link" onClick={onBack}><ArrowLeft size={17} /> All services</button><section className="service-detail-hero"><span className="service-visual detail" style={{ "--accent": visual.color, "--tint": visual.tint }} aria-hidden="true">{visual.icon}</span><div><span className="eyebrow">HOMEFIX SERVICE</span><h1>{service.name}</h1><p>{service.description}. Book a verified HOMEFIX professional at a time that works for you.</p><button className="primary-btn" onClick={() => onService(service)}>Book {service.name} <ArrowRight size={17} /></button></div></section><section className="service-detail-features"><article><ShieldCheck size={20} /><b>Clear booking details</b><span>Review date, time and address before confirming.</span></article><article><MapPin size={20} /><b>Private tracking</b><span>Track active bookings only after a professional is assigned.</span></article><article><MessageCircle size={20} /><b>Helpful support</b><span>Use HOMEFIX support when you need assistance.</span></article></section></main>;
 }
 
 function Booking({ service, form, update, step, setStep, onBack, onConfirm, submitting }) {
