@@ -31,6 +31,7 @@ import EmployeeDashboardPage from "./pages/EmployeeDashboard";
 import AIAssistant from "./components/AIAssistant";
 import NotificationBell from "./components/NotificationBell";
 import { createSupportTicket } from "./services/support";
+import { reportSafetyIncident } from "./services/safety";
 
 // ---------------------------------------------------------------------
 // Static fallback service catalogue used only when the database catalogue
@@ -1286,13 +1287,19 @@ function SupportModal({ close, notify }) {
   const [message, setMessage] = useState("");
   const [category, setCategory] = useState("other");
   const [sending, setSending] = useState(false);
+  const [safetyMode, setSafetyMode] = useState(false);
 
   const submit = async () => {
     if (!message.trim()) return notify("Please describe your issue.");
     setSending(true);
     try {
-      await createSupportTicket({ category, message: message.trim() });
-      notify("Support ticket submitted. Our team will get back to you.");
+      if (safetyMode) {
+        await reportSafetyIncident({ category, details: message.trim() });
+        notify("Safety report submitted. Our team will review it promptly.");
+      } else {
+        await createSupportTicket({ category, message: message.trim() });
+        notify("Support ticket submitted. Our team will get back to you.");
+      }
       close();
     } catch (error) {
       notify(error.message || "Unable to submit support ticket.");
@@ -1306,18 +1313,22 @@ function SupportModal({ close, notify }) {
       <div className="modal">
         <button className="modal-close" onClick={close}><X /></button>
         <h2>HOMEFIX support</h2>
-        <p className="lead">Our support team is available to help with bookings and payments.</p>
+        <p className="lead">Our support team is available to help with bookings, payments and safety concerns.</p>
+        <div className="role-tabs" style={{ marginBottom: 12 }}>
+          <button type="button" className={!safetyMode ? "selected" : ""} onClick={() => setSafetyMode(false)}>Support request</button>
+          <button type="button" className={safetyMode ? "selected" : ""} onClick={() => setSafetyMode(true)}>Safety report</button>
+        </div>
         <select value={category} onChange={(e) => setCategory(e.target.value)} style={{ marginBottom: 10, width: "100%" }}>
-          {["booking", "payment", "account", "other"].map((c) => <option key={c} value={c}>{c}</option>)}
+          {(safetyMode ? ["emergency", "unsafe_situation", "harassment", "accident", "other"] : ["booking", "payment", "account", "other"]).map((c) => <option key={c} value={c}>{c.replaceAll("_", " ")}</option>)}
         </select>
         <textarea
           rows={4}
           style={{ width: "100%", marginBottom: 12 }}
-          placeholder="Describe your issue..."
+          placeholder={safetyMode ? "Describe the safety concern..." : "Describe your issue..."}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
         />
-        <button className="primary-btn wide" disabled={sending} onClick={submit}><MessageCircle size={16} /> {sending ? "Submitting..." : "Submit ticket"}</button>
+        <button className={safetyMode ? "danger-btn wide" : "primary-btn wide"} disabled={sending} onClick={submit}><MessageCircle size={16} /> {sending ? "Submitting..." : safetyMode ? "Submit safety report" : "Submit ticket"}</button>
       </div>
     </div>
   );
