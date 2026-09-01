@@ -15,6 +15,7 @@ import AuthModal from "./components/AuthModal";
 import AdminLogin from "./components/AdminLogin";
 import EmployeeLogin from "./components/EmployeeLogin";
 import LiveTrackingMap from "./components/maps/LiveTrackingMap";
+import GoogleMap from "./GoogleMap";
 import { listServices } from "./services/catalog";
 import { subscribeToBookingLocation, writeMyLocation } from "./services/employeeLocation";
 import { useLiveLocation } from "./hooks/useLiveLocation";
@@ -728,10 +729,10 @@ function Home({ services, query, setQuery, onService, onServices, onOrders, onBi
   };
   return (
     <main>
-      <section className="hero">
-        <div className="hero-copy">
-          <span className="eyebrow"><ShieldCheck size={16} /> TRUSTED LOCAL PROFESSIONALS</span>
-          <h1>Book a professional.<br /><em>Fix your home.</em></h1>
+      <section className="hero premium-hero">
+        <div className="hero-copy hero-reveal">
+          <span className="eyebrow"><ShieldCheck size={16} /> TRUSTED HOME &amp; MOBILITY SERVICES</span>
+          <h1><span>Book a professional.</span><br /><em>Fix your home.</em></h1>
           <p>From everyday repairs and cleaning to appliance care, trusted help arrives at your doorstep.</p>
           <div className="search-box hero-search">
             <Search size={19} />
@@ -739,14 +740,14 @@ function Home({ services, query, setQuery, onService, onServices, onOrders, onBi
             <button onClick={onServices}>Search</button>
           </div>
           <div className="hero-actions">
-            <button className="primary-btn" onClick={onServices}>Explore services <ArrowRight size={18} /></button>
-            <button className="text-btn" onClick={onOrders}>View my orders</button>
+            <button className="primary-btn" onClick={onServices}>Book a service <ArrowRight size={18} /></button>
+            <button className="secondary-btn hero-secondary" onClick={onServices}>Explore services</button>
             <button className="text-btn" onClick={useCurrentLocation}><LocateFixed size={16} /> Current location</button>
           </div>
         </div>
-        <div className="hero-art">
+        <div className="hero-art hero-art-reveal">
           <img src={img.cleaning} alt="Professional cleaning a home" />
-          <div className="floating-proof"><CheckCircle2 size={20} /><span><b>4.9/5</b><small>Rated by 2,000+ homes</small></span></div>
+          <div className="floating-proof"><CheckCircle2 size={20} /><span><b>Verified providers</b><small>For your home and ride</small></span></div>
         </div>
       </section>
       <section className="trust-strip">
@@ -754,13 +755,13 @@ function Home({ services, query, setQuery, onService, onServices, onOrders, onBi
         <span><Clock3 /> Same-day availability</span>
         <span><WalletCards /> Transparent pricing</span>
       </section>
-      <section className="content-section">
+      <section className="content-section reveal-section">
         <SectionTitle eyebrow="POPULAR SERVICES" title="What can we help with?" action="View all" onClick={onServices} />
         <div className="service-grid">
           {services.slice(0, 6).map((service) => <ServiceCard service={service} onClick={() => onService(service)} key={service.id} />)}
         </div>
       </section>
-      <section className="content-section">
+      <section className="content-section reveal-section">
         <SectionTitle eyebrow="RIDES & MOBILITY" title="Book a ride" action="See more" onClick={null} />
         <div className="service-grid">
           <button className="service-card" onClick={onBikeRide} style={{ cursor: "pointer" }}>
@@ -775,7 +776,7 @@ function Home({ services, query, setQuery, onService, onServices, onOrders, onBi
           </button>
         </div>
       </section>
-      <section className="content-section">
+      <section className="content-section reveal-section">
         <SectionTitle eyebrow="MECHANIC SERVICES" title="Vehicle repair" action="See all" onClick={null} />
         <div className="service-grid">
           <button className="service-card" onClick={onBikeMechanic} style={{ cursor: "pointer" }}>
@@ -790,8 +791,41 @@ function Home({ services, query, setQuery, onService, onServices, onOrders, onBi
           </button>
         </div>
       </section>
+      <section className="content-section reveal-section">
+        <div className="home-map-layout">
+          <div className="map-copy">
+            <span className="eyebrow"><MapPin size={16} /> SERVICES NEAR YOU</span>
+            <h2>Track every step with confidence.</h2>
+            <p>Share your location only when you choose. HOMEFIX keeps live professional tracking private to your active booking.</p>
+            <div className="map-copy-points"><span><ShieldCheck size={17} /> Permission-first location</span><span><CheckCircle2 size={17} /> Private booking tracking</span></div>
+          </div>
+          <PublicMapPreview />
+        </div>
+      </section>
+      <section className="content-section reveal-section how-it-works">
+        <SectionTitle eyebrow="HOW HOMEFIX WORKS" title="A better way to get things fixed." />
+        <div className="steps-grid">
+          {[
+            ["01", "Choose a service", "Find help for your home, vehicle, or journey."],
+            ["02", "Pick date & location", "Choose the exact date, time, and address that suits you."],
+            ["03", "Confirm your booking", "Review your service and choose a payment method."],
+            ["04", "Track your professional", "Follow progress once a verified provider is assigned."],
+          ].map(([number, title, description]) => <article className="step-card" key={number}><span>{number}</span><h3>{title}</h3><p>{description}</p></article>)}
+        </div>
+      </section>
+      <section className="home-cta reveal-section">
+        <div><span className="eyebrow">HOMEFIX AT YOUR DOOR</span><h2>Need help at home?</h2><p>Book a trusted HOMEFIX professional today.</p></div>
+        <button className="primary-btn" onClick={onServices}>Book a service <ArrowRight size={18} /></button>
+      </section>
     </main>
   );
+}
+
+function PublicMapPreview() {
+  if (!import.meta.env.VITE_GOOGLE_MAPS_API_KEY) {
+    return <div className="public-map-placeholder"><MapPin size={30} /><b>Maps configuration required</b><span>Set VITE_GOOGLE_MAPS_API_KEY to view service coverage.</span></div>;
+  }
+  return <div className="public-map"><GoogleMap center={{ lat: 17.385, lng: 78.4867 }} /></div>;
 }
 
 function Services({ services, query, setQuery, onService }) {
