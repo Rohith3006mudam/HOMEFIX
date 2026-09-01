@@ -173,6 +173,7 @@ function usePublicMetadata({ title, description, path = "/", service }) {
       element.setAttribute("content", content);
     };
     setMeta("description", description); setMeta("og:title", title, true); setMeta("og:description", description, true); setMeta("og:url", canonical, true); setMeta("twitter:card", "summary");
+    setMeta("robots", import.meta.env.VITE_PUBLIC_SITE_URL ? "index,follow" : "noindex,nofollow");
     let link = document.head.querySelector('link[rel="canonical"]');
     if (!link) { link = document.createElement("link"); link.setAttribute("rel", "canonical"); document.head.appendChild(link); }
     link.setAttribute("href", canonical);
