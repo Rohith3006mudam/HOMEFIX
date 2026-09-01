@@ -96,15 +96,21 @@ const pageFromPath = () => {
   if (path === "/admin/login") return "admin-login";
   if (path === "/driver/login") return "driver-login";
   if (path === "/services") return "services";
+  if (path === "/about" || path === "/help") return "home";
   if (path.startsWith("/service/") || path === "/booking") return "booking";
   if (path === "/confirmation") return "confirmation";
-  if (path === "/orders") return "orders";
+  if (path === "/orders" || path === "/customer/bookings") return "orders";
   if (path.startsWith("/orders/")) return "order-details";
-  if (path.startsWith("/track/")) return "tracking";
-  if (path === "/profile") return "profile";
+  if (path.startsWith("/track/") || path === "/customer/tracking") return "tracking";
+  if (path === "/profile" || path === "/customer/profile") return "profile";
+  if (path === "/customer/dashboard") return "home";
+  if (path === "/customer/rides") return "ride-booking-bike";
+  if (path === "/customer/payments") return "orders";
+  if (path === "/customer/notifications") return "profile";
+  if (path === "/customer/support") return "support";
   if (path.startsWith("/employee/")) return "professional";
   if (path.startsWith("/admin/")) return "admin";
-  if (path.startsWith("/driver/dashboard")) return "driver-dashboard";
+  if (path.startsWith("/driver/")) return "driver-dashboard";
   if (path === "/rides/bike") return "ride-booking-bike";
   if (path === "/rides/auto") return "ride-booking-auto";
   if (path.startsWith("/ride/")) return "ride-tracking";
@@ -116,8 +122,8 @@ const pageFromPath = () => {
 };
 
 // /admin/<tab> and /employee/<tab> deep-link to the matching dashboard tab.
-const ADMIN_TABS = ["dashboard", "users", "employees", "drivers", "bookings", "rides", "services", "payments", "support", "settings"];
-const EMPLOYEE_TAB_ALIASES = { jobs: "jobs", rides: "history", profile: "profile" };
+const ADMIN_TABS = ["dashboard", "users", "customers", "employees", "drivers", "verification", "bookings", "rides", "live-map", "services", "payments", "payouts", "complaints", "reviews", "safety", "notifications", "ai", "analytics", "reports", "settings", "audit-logs"];
+const EMPLOYEE_TAB_ALIASES = { dashboard: "jobs", jobs: "jobs", calendar: "jobs", earnings: "history", verification: "profile", profile: "profile", support: "profile" };
 
 const adminTabFromPath = () => {
   const segment = window.location.pathname.split("/")[2];
@@ -130,7 +136,7 @@ const employeeTabFromPath = () => {
 };
 
 const routeFor = (page, activeId) => ({
-  home: "/", login: "/login", "employee-login": "/employee/login", "admin-login": "/admin/login",
+  home: "/", login: "/customer/login", "employee-login": "/employee/login", "admin-login": "/admin/login",
   "driver-login": "/driver/login", "driver-dashboard": "/driver/dashboard",
   services: "/services", booking: "/booking", confirmation: "/confirmation",
   orders: "/orders", "order-details": activeId ? `/orders/${activeId}` : "/orders",
